@@ -1,0 +1,342 @@
+import Link from "next/link";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Clock,
+  FileText,
+  CheckCircle2,
+  Mail,
+  Eye,
+} from "lucide-react";
+import { getClients, getDashboardSummary, getReports, getSprintCards, getSprintMetrics } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
+import { ButtonLink } from "@/components/ui/button";
+import { PlannedVsCompletedChart } from "@/components/dashboard/charts";
+import { cn, formatDateTime } from "@/lib/utils";
+
+export const metadata = { title: "Visão geral" };
+
+const statusBadge = {
+  pending_approval: { tone: "gold" as const, label: "Aguarda aprovação" },
+  draft: { tone: "muted" as const, label: "Rascunho" },
+  sent: { tone: "teal" as const, label: "Enviado" },
+  scheduled: { tone: "neutral" as const, label: "Agendado" },
+};
+
+const columnMeta = {
+  done: { label: "Concluído", tone: "bg-teal", bg: "bg-teal-soft/50" },
+  in_progress: { label: "Em curso", tone: "bg-gold", bg: "bg-gold-soft/50" },
+  blocked: { label: "Bloqueado", tone: "bg-accent", bg: "bg-accent-soft/50" },
+};
+
+export default async function DashboardPage() {
+  const [summary, reports, clients, cards, metrics] = await Promise.all([
+    getDashboardSummary(),
+    getReports(),
+    getClients(),
+    getSprintCards(),
+    getSprintMetrics("atelier-mira"),
+  ]);
+
+  const pending = reports.filter((r) => r.status === "pending_approval" || r.status === "draft");
+  const sent = reports.filter((r) => r.status === "sent");
+  const clientById = Object.fromEntries(clients.map((c) => [c.id, c]));
+
+  return (
+    <main className="mx-auto max-w-[1180px] px-5 py-8 sm:px-8 lg:py-10">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[11.5px] font-semibold uppercase tracking-[0.16em] text-muted-soft">
+            Sexta-feira, 16 de outubro
+          </p>
+          <h1 className="font-display mt-1.5 text-[30px] leading-tight text-ink sm:text-[34px]">
+            Bom dia, Maria.
+          </h1>
+          <p className="mt-1 text-[14px] text-muted">
+            {pending.length} relatórios por aprovar · {clients.filter((c) => c.status === "active").length} clientes ativos
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <ButtonLink href="/onboarding" variant="secondary" size="sm">
+            Assistente
+          </ButtonLink>
+          <ButtonLink href="/dashboard/reports/rpt-atelier-w42" size="sm">
+            Rever rascunho
+            <ArrowRight className="h-3.5 w-3.5" />
+          </ButtonLink>
+        </div>
+      </div>
+
+      {/* KPI row */}
+      <div className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="Por aprovar"
+          value={String(summary.pending)}
+          hint="rascunhos prontos"
+          icon={FileText}
+          accent
+        />
+        <StatCard
+          label="Enviados"
+          value={String(summary.sentThisMonth)}
+          hint="neste ciclo"
+          icon={Mail}
+        />
+        <StatCard
+          label="Taxa de conclusão"
+          value={`${summary.avgCompletionRate}%`}
+          hint="tarefas planeadas"
+          icon={CheckCircle2}
+        />
+        <StatCard
+          label="Tempo poupado"
+          value={`${summary.timeSavedHours} h`}
+          hint="estimativa do protótipo"
+          icon={Clock}
+        />
+      </div>
+
+      <div className="mt-6 grid gap-6 xl:grid-cols-[1.45fr_1fr]">
+        {/* Pending reports */}
+        <section aria-labelledby="pendentes" className="rounded-2xl border border-line bg-surface">
+          <div className="flex items-center justify-between border-b border-line px-5 py-4">
+            <h2 id="pendentes" className="text-[14.5px] font-semibold text-ink">
+              Relatórios pendentes
+            </h2>
+            <Badge tone="gold">{pending.length} por aprovar</Badge>
+          </div>
+          <ul className="divide-y divide-line">
+            {pending.map((r) => {
+              const client = clientById[r.clientId];
+              const st = statusBadge[r.status];
+              return (
+                <li key={r.id}>
+                  <Link
+                    href={`/dashboard/reports/${r.id}`}
+                    className="group flex items-start gap-4 px-5 py-4 transition-colors hover:bg-paper/70"
+                  >
+                    <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-sand text-[11px] font-semibold text-ink-soft">
+                      {client?.avatarInitials}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-[13.5px] font-medium text-ink">
+                          {client?.name}
+                        </p>
+                        <Badge tone={st.tone} dot>
+                          {st.label}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 truncate text-[12.5px] text-muted">{r.subject}</p>
+                      <p className="mt-1.5 text-[11px] text-muted-soft">
+                        {r.weekLabel} · {r.tasksCompleted}/{r.tasksPlanned} tarefas · gerado{" "}
+                        {formatDateTime(r.generatedAt)}
+                      </p>
+                    </div>
+                    <ArrowUpRight className="mt-1 h-4 w-4 shrink-0 text-line-strong transition-colors group-hover:text-accent" />
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+
+        {/* Client status */}
+        <section aria-labelledby="clientes" className="rounded-2xl border border-line bg-surface">
+          <div className="flex items-center justify-between border-b border-line px-5 py-4">
+            <h2 id="clientes" className="text-[14.5px] font-semibold text-ink">
+              Estado dos clientes
+            </h2>
+            <span className="text-[11.5px] text-muted">{clients.length} no total</span>
+          </div>
+          <ul className="divide-y divide-line">
+            {clients.map((c) => {
+              const lastSent = reports
+                .filter((r) => r.clientId === c.id && r.status === "sent")
+                .sort((a, b) => (b.sentAt ?? "").localeCompare(a.sentAt ?? ""))[0];
+              return (
+                <li key={c.id}>
+                  <Link
+                    href={`/dashboard/clients/${c.id}`}
+                    className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-paper/70"
+                  >
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-sand text-[10.5px] font-semibold text-ink-soft">
+                      {c.avatarInitials}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13px] font-medium text-ink">{c.name}</p>
+                      <p className="truncate text-[11px] text-muted">
+                        {lastSent ? `Último envio: ${formatDateTime(lastSent.sentAt)}` : "Ainda sem relatórios"}
+                      </p>
+                    </div>
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-medium",
+                        c.status === "active" && "bg-teal-soft text-teal",
+                        c.status === "onboarding" && "bg-gold-soft text-[#8a5c00]",
+                        c.status === "paused" && "bg-sand text-muted",
+                      )}
+                    >
+                      {c.status === "active" ? "Ativo" : c.status === "onboarding" ? "Onboarding" : "Pausado"}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      </div>
+
+      {/* Sprint board + chart */}
+      <div className="mt-6 grid gap-6 xl:grid-cols-[1.45fr_1fr]">
+        <section aria-labelledby="sprint" className="rounded-2xl border border-line bg-surface p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 id="sprint" className="text-[14.5px] font-semibold text-ink">
+                Tarefas por sprint
+              </h2>
+              <p className="mt-0.5 text-[11.5px] text-muted">Semana 42 · GitHub Projects (demo)</p>
+            </div>
+            <Badge tone="muted">Atelier Mira</Badge>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            {(["done", "in_progress", "blocked"] as const).map((col) => {
+              const items = cards.filter((c) => c.column === col && c.clientId === "atelier-mira");
+              const meta = columnMeta[col];
+              return (
+                <div key={col} className={cn("rounded-xl p-2.5", meta.bg)}>
+                  <p className="flex items-center gap-1.5 px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
+                    <span className={cn("h-1.5 w-1.5 rounded-full", meta.tone)} />
+                    {meta.label}
+                    <span className="ml-auto text-muted-soft">{items.length}</span>
+                  </p>
+                  <ul className="space-y-1.5">
+                    {items.map((c) => (
+                      <li
+                        key={c.id}
+                        className="rounded-lg border border-line/80 bg-surface px-2.5 py-2 shadow-[0_1px_1px_rgba(18,23,27,0.03)]"
+                      >
+                        <p className="text-[12px] leading-snug text-ink">{c.title}</p>
+                        <p className="mt-1 flex items-center gap-1.5 text-[10px] text-muted-soft">
+                          <span className="font-mono">{c.id}</span>
+                          {c.label && (
+                            <span className="rounded bg-sand px-1 py-px">{c.label}</span>
+                          )}
+                        </p>
+                      </li>
+                    ))}
+                    {items.length === 0 && (
+                      <li className="rounded-lg border border-dashed border-line-strong/60 px-2 py-3 text-center text-[11px] text-muted-soft">
+                        Sem tarefas
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section aria-labelledby="andamento" className="rounded-2xl border border-line bg-surface p-5">
+          <h2 id="andamento" className="text-[14.5px] font-semibold text-ink">
+            Concluídas vs. planeadas
+          </h2>
+          <p className="mt-0.5 text-[11.5px] text-muted">Atelier Mira · últimas 7 semanas</p>
+          <div className="mt-4">
+            <PlannedVsCompletedChart data={metrics} />
+          </div>
+          <div className="mt-3 flex items-center gap-4 text-[11px] text-muted">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-teal" /> Concluídas
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-line-strong" /> Planeadas
+            </span>
+          </div>
+        </section>
+      </div>
+
+      {/* Sent reports */}
+      <section aria-labelledby="enviados" className="mt-6 rounded-2xl border border-line bg-surface">
+        <div className="flex items-center justify-between border-b border-line px-5 py-4">
+          <h2 id="enviados" className="text-[14.5px] font-semibold text-ink">
+            Relatórios enviados
+          </h2>
+          <span className="text-[11.5px] text-muted">{sent.length} registos</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[680px] text-left">
+            <caption className="sr-only">Relatórios já enviados aos clientes</caption>
+            <thead>
+              <tr className="border-b border-line text-[10.5px] uppercase tracking-wide text-muted-soft">
+                <th scope="col" className="px-5 py-2.5 font-semibold">Cliente</th>
+                <th scope="col" className="px-4 py-2.5 font-semibold">Semana</th>
+                <th scope="col" className="px-4 py-2.5 font-semibold">Enviado</th>
+                <th scope="col" className="px-4 py-2.5 font-semibold">Abertura</th>
+                <th scope="col" className="px-5 py-2.5 text-right font-semibold">Tarefas</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sent.map((r) => (
+                <tr key={r.id} className="border-b border-line/60 last:border-0 hover:bg-paper/60">
+                  <td className="px-5 py-3 text-[13px] font-medium text-ink">
+                    {clientById[r.clientId]?.name}
+                  </td>
+                  <td className="px-4 py-3 text-[12.5px] text-muted">{r.weekLabel}</td>
+                  <td className="px-4 py-3 text-[12.5px] text-muted">{formatDateTime(r.sentAt)}</td>
+                  <td className="px-4 py-3">
+                    {r.openedAt ? (
+                      <span className="inline-flex items-center gap-1.5 text-[12px] text-teal">
+                        <Eye className="h-3.5 w-3.5" aria-hidden="true" /> Aberto
+                      </span>
+                    ) : (
+                      <span className="text-[12px] text-muted-soft">Ainda não aberto</span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3 text-right text-[12.5px] tabular-nums text-ink-soft">
+                    {r.tasksCompleted}/{r.tasksPlanned}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <p className="mt-6 text-center text-[11px] text-muted-soft">
+        Todos os nomes, clientes e métricas nesta página são dados de demonstração.
+      </p>
+    </main>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  hint,
+  icon: Icon,
+  accent,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  icon: React.ComponentType<{ className?: string }>;
+  accent?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border p-4",
+        accent ? "border-accent/20 bg-accent-soft/60" : "border-line bg-surface",
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <p className="text-[11.5px] font-medium uppercase tracking-wide text-muted">{label}</p>
+        <Icon className={cn("h-4 w-4", accent ? "text-accent" : "text-muted-soft")} aria-hidden="true" />
+      </div>
+      <p className="font-display mt-2 text-[28px] leading-none text-ink">{value}</p>
+      <p className="mt-1.5 text-[11px] text-muted-soft">{hint}</p>
+    </div>
+  );
+}
