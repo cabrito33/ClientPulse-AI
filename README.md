@@ -14,7 +14,7 @@ pnpm dev
 bun dev
 ```
 
-Link https://weekly-client-reports-7bmbzsdxa-weekly-client-reports.vercel.app/ 
+Link: https://clientpulse-ai-git-feat-integracao-mvp-weekly-client-reports.vercel.app?_vercel_share=XKQ2SCyQMSMfCWVkBiXrgSQ4YuQ4GHHW
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
