@@ -216,10 +216,14 @@ export async function fetchBoardTasks(
   blocked: GitHubTaskItem[];
 }> {
   const query = `
-    query($projectId: ID!, $first: Int!) {
+    query($projectId: ID!, $first: Int!, $after: String) {
       node(id: $projectId) {
         ... on ProjectV2 {
-          items(first: $first) {
+          items(first: $first, after: $after) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
             nodes {
               id
               updatedAt
@@ -285,8 +289,45 @@ export async function fetchBoardTasks(
     }
   `;
 
-  const data = await executeGitHubGraphQL(pat, query, { projectId, first: 100 });
-  const rawItems = data.node?.items?.nodes ?? [];
+  // Cursor-based pagination: fetch all pages of board items
+  const rawItems: Array<{
+    id: string;
+    updatedAt: string;
+    fieldValues?: { nodes?: Array<{ name?: string; field?: { name?: string } }> };
+    content?: {
+      id?: string;
+      number?: number;
+      title?: string;
+      body?: string;
+      state?: string;
+      closedAt?: string | null;
+      updatedAt?: string;
+      url?: string;
+      assignees?: { nodes?: Array<{ login: string }> };
+      labels?: { nodes?: Array<{ name: string }> };
+    };
+  }> = [];
+
+  let hasNextPage = true;
+  let cursor: string | null = null;
+  const maxPages = 10; // Safety guard: fetches up to 1000 items
+  let pageCount = 0;
+
+  while (hasNextPage && pageCount < maxPages) {
+    pageCount++;
+    const data = await executeGitHubGraphQL(pat, query, {
+      projectId,
+      first: 100,
+      after: cursor,
+    });
+
+    const itemsConnection = data.node?.items;
+    const pageNodes = itemsConnection?.nodes ?? [];
+    rawItems.push(...pageNodes);
+
+    hasNextPage = Boolean(itemsConnection?.pageInfo?.hasNextPage);
+    cursor = itemsConnection?.pageInfo?.endCursor ?? null;
+  }
 
   // Normalize column mapping names to lowercase for comparison
   const doneColumns = (columnMapping.done ?? ['done', 'concluído', 'concluido']).map((c) => c.toLowerCase());
