@@ -47,10 +47,14 @@ export const demoProjects: GithubProject[] = [
 ];
 
 const DEMO_QUERY = `
-  query ProjectItems($projectId: ID!) {
+  query ProjectItems($projectId: ID!, $after: String) {
     node(id: $projectId) {
       ... on ProjectV2 {
-        items(first: 100) {
+        items(first: 100, after: $after) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
           nodes {
             fieldValues(first: 20) {
               nodes {
