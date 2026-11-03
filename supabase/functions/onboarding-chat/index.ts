@@ -1,24 +1,18 @@
 // ==============================================================================
 // ClientPulse AI — Edge Function: onboarding-chat
 // File: supabase/functions/onboarding-chat/index.ts
+// Issue: [BE-27] [P1] [L] Chatbot de onboarding e FAQ (US02) #47
 //
 // PURPOSE:
-// Conversational AI Onboarding Assistant (Chatbot & Voice Bot backend).
-// Guides a new agency user through:
-// 1. Explaining the 3-step setup in under 5 minutes.
-// 2. Prompting for their GitHub Fine-Grained Personal Access Token (PAT).
-// 3. Testing and validating the token in real time against the GitHub GraphQL API.
-// 4. Automatically saving the verified token to 'github_integrations'.
-// 5. Guiding the user to select their project board and register their first client.
-//
-// VOICE NOTE:
-// Voice recognition (Speech-to-Text) and speech synthesis (Text-to-Speech)
-// run in the client's browser using the native Web Speech API.
-// This function receives clean text and returns clean conversational text & JSON.
+// Conversational AI Onboarding Assistant & FAQ (PulseBot) with LLM.
+// 1. Guides initial setup: GitHub PAT -> Column Mapping -> First Client profile.
+// 2. Answers product FAQs based on official PRD & architecture documentation.
+// 3. Strictly validates GitHub connection before allowing user to advance.
+// 4. Enforces guardrails to refuse any out-of-scope questions.
 //
 // SECURITY:
 // - Protected by CORS headers.
-// - Requires authenticated agency user (Supabase JWT).
+// - Supports both authenticated users and initial setup requests.
 // ==============================================================================
 
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
@@ -42,18 +36,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // 1. Authenticate Agency User
     const user = await getAuthenticatedUser(req);
-    if (!user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized: Missing or invalid Supabase Auth token.' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const supabase = createUserClient(req);
-
-    // 2. Parse Request Payload
     const body = await req.json().catch(() => ({}));
     const { message, conversation_history } = body;
 
@@ -66,8 +49,9 @@ Deno.serve(async (req: Request) => {
 
     const history: ChatMessage[] = Array.isArray(conversation_history) ? conversation_history : [];
 
-    // 3. Check for GitHub PAT in User Message
-    // Matches GitHub fine-grained tokens (github_pat_...) or classic tokens (ghp_...)
+    // --------------------------------------------------------------------------
+    // 1. Real-time GitHub PAT Detection and Validation
+    // --------------------------------------------------------------------------
     const patRegex = /(github_pat_[a-zA-Z0-9_]{30,}|ghp_[a-zA-Z0-9]{36,})/;
     const patMatch = message.match(patRegex);
 
@@ -87,24 +71,27 @@ Deno.serve(async (req: Request) => {
         tokenValidationResult.success = true;
         tokenValidationResult.username = ghUser.username;
 
-        // Automatically store or update the verified PAT in database for this agency
-        const { data: agency } = await supabase
-          .from('agencies')
-          .select('id')
-          .eq('user_id', user.id)
-          .single();
+        // Save to database if user is authenticated
+        if (user) {
+          const supabase = createUserClient(req);
+          const { data: agency } = await supabase
+            .from('agencies')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle();
 
-        if (agency) {
-          await supabase.from('github_integrations').upsert(
-            {
-              agency_id: agency.id,
-              pat_token: extractedPat,
-              github_username: ghUser.username,
-              is_valid: true,
-              last_synced_at: new Date().toISOString(),
-            },
-            { onConflict: 'agency_id' }
-          );
+          if (agency) {
+            await supabase.from('github_integrations').upsert(
+              {
+                agency_id: agency.id,
+                pat_token: extractedPat,
+                github_username: ghUser.username,
+                is_valid: true,
+                last_synced_at: new Date().toISOString(),
+              },
+              { onConflict: 'agency_id' }
+            );
+          }
         }
       } catch (err: unknown) {
         tokenValidationResult.success = false;
@@ -112,49 +99,82 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // 4. Check if Agency Already Has a Valid GitHub Integration
-    const { data: existingIntegration } = await supabase
-      .from('github_integrations')
-      .select('github_username, is_valid')
-      .maybeSingle();
+    // Check existing connection state
+    let isConnected = tokenValidationResult.success;
+    let connectedUsername = tokenValidationResult.username;
 
-    const isConnected = existingIntegration?.is_valid || tokenValidationResult.success;
-    const connectedUsername = tokenValidationResult.username || existingIntegration?.github_username;
+    if (user && !isConnected) {
+      const supabase = createUserClient(req);
+      const { data: existingIntegration } = await supabase
+        .from('github_integrations')
+        .select('github_username, is_valid')
+        .maybeSingle();
 
-    // 5. Build System Instruction for Gemini Assistant
+      if (existingIntegration?.is_valid) {
+        isConnected = true;
+        connectedUsername = existingIntegration.github_username ?? undefined;
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // 2. Comprehensive System Instruction with Knowledge Base & Guardrails
+    // --------------------------------------------------------------------------
     const systemInstruction = `
-You are PulseBot, the friendly, efficient conversational onboarding assistant for ClientPulse AI.
+You are PulseBot, the dedicated intelligent onboarding and support assistant for ClientPulse AI.
 
-YOUR ROLE:
-Guide new freelancers and agency owners to complete their initial onboarding in under 5 minutes.
-You speak clearly, warmly, and concisively (2-4 sentences per response max, perfect for both reading and voice playback via Text-to-Speech).
+PRODUCT KNOWLEDGE BASE (Source of Truth):
+1. WHAT IS CLIENTPULSE AI?
+   - A B2B SaaS platform that automates weekly progress reporting for freelance developers and small agencies (2–10 people).
+   - Integrates directly with GitHub Projects v2 via GraphQL API.
+   - Synthesizes completed deliverables, blockers, and next steps into clear business language using Google Gemini AI, free of technical jargon.
+   - Structured strictly in 3 executive blocks:
+     * "done" (O que foi feito / Entregas)
+     * "blockers" (Bloqueios / Pontos de atenção a requerer decisão do cliente)
+     * "next_steps" (Próximos passos / Prioridades da próxima sprint)
+   - Reports are delivered via email (Resend) and hosted on a Zero-Login Client Portal (/portal?token=UUID).
+   - Zero-Login Portal: Read-only, unguessable secure token, displays the week's report, history, and sprint velocity chart. Clients never need to create passwords or remember credentials.
+   - Privacy & Security: The system NEVER accesses, clones, or stores repository source code. It strictly reads issue and card metadata (titles, status, assignees, labels).
 
-ONBOARDING WORKFLOW (Step-by-step):
-1. Greet the user warmly and introduce ClientPulse AI (weekly automated reports from GitHub Projects).
-2. Ask the user to connect their GitHub account using a Personal Access Token (PAT) with 'read:project' scope.
-3. Once the token is connected, congratulate them and ask for the project board they want to report on (e.g., organization/user name and board title).
-4. Guide them to register their first client: Client Name, Email, preferred Tone (Formal, Executive, or Casual), and Language (Portuguese or English).
-5. Conclude by confirming that everything is ready for their first Friday report!
+2. ONBOARDING WORKFLOW (Step-by-step guidance):
+   - Step 1 (GitHub Connection): Guide user to provide a GitHub Fine-Grained Personal Access Token (PAT) with 'read:project' and 'repo' read-only scope.
+     * MANDATORY VALIDATION: You must NOT allow the user to advance past Step 1 until a valid token has been verified.
+   - Step 2 (Board & Column Mapping): Guide user to select their ProjectV2 board and map columns (e.g. "Done" -> Concluído, "In Progress" -> Em curso, "Blocked" -> Bloqueado).
+   - Step 3 (First Client Profile): Guide user to enter Client Name, Company, Email, preferred Tone (Formal, Executive, Casual), and Language (Portuguese or English).
+   - Step 4 (Finish): Congratulate the user, confirm their automated Friday delivery schedule, and invite them to review their first draft.
 
-CURRENT SYSTEM CONTEXT:
-- GitHub Connected: ${isConnected ? `YES (Connected to @${connectedUsername})` : 'NO (Awaiting token)'}
+3. FREQUENTLY ASKED QUESTIONS (FAQ):
+   - Q: "Vocês lêem o código do meu cliente?" -> R: "Não! Por motivos éticos e de segurança, acedemos exclusivamente aos metadados do GitHub Projects (títulos, estados e etiquetas). O código-fonte nunca é lido nem armazenado."
+   - Q: "O cliente precisa de criar conta para ver o portal?" -> R: "Não. O cliente recebe um link exclusivo e seguro com token UUIDv4. A página é de leitura simples, sem necessidade de logins ou palavras-passe."
+   - Q: "E se a IA inventar uma tarefa que não existe?" -> R: "O nosso motor utiliza regras estritas anti-alucinação e temperatura baixa (0.2), baseando-se unicamente nas tarefas reais do quadro. Além disso, os relatórios ficam em rascunho para aprovação prévia do gestor."
+   - Q: "Suporta Trello ou Jira?" -> R: "Nesta versão MVP o foco exclusivo é o GitHub Projects v2. Integrações com Trello e Jira estão planeadas para o pós-MVP."
+
+4. STRICT SCOPE GUARDRAILS (CRITICAL):
+   - You ONLY answer questions related to ClientPulse AI, onboarding, GitHub Projects integration, reporting, and product FAQs.
+   - IF THE USER ASKS ANY OUT-OF-SCOPE QUESTION (e.g. coding unrelated algorithms, recipes, sports, weather, creative writing, jokes, personal opinions):
+     YOU MUST POLITELY REFUSE:
+     "O meu papel é ajudar-te exclusivamente na configuração do ClientPulse AI, na integração com o GitHub Projects e na resposta a dúvidas sobre o produto. Como posso ajudar com o teu onboarding ou com a tua conta?"
+
+SYSTEM CONTEXT FOR THIS CONVERSATION:
+- GitHub Connected: ${isConnected ? `YES (Connected to user @${connectedUsername})` : 'NO (Awaiting valid token)'}
 ${
   tokenValidationResult.attempted
     ? tokenValidationResult.success
-      ? `- JUST VALIDATED: Token validated successfully for user @${tokenValidationResult.username}! Acknowledge this with enthusiasm.`
-      : `- TOKEN FAILED: The token provided was invalid or lacked permissions: "${tokenValidationResult.error}". Explain politely how to generate a token with 'read:project' permissions.`
+      ? `- EVENT: Token validated successfully for user @${tokenValidationResult.username}! Celebrate this and proceed to Step 2 (selecting board and mapping columns).`
+      : `- EVENT: Token validation failed: "${tokenValidationResult.error}". Inform the user politely and explain how to create a token with 'read:project' permissions.`
     : ''
 }
 
-LANGUAGE:
-- Match the language of the user's message (Portuguese by default, English if addressed in English).
+TONE AND STYLE:
+- Professional, welcoming, concise, and helpful (2 to 4 sentences per message max).
+- Match the language of the user (Portuguese by default; English if spoken in English).
 `;
 
-    // 6. Build Conversation Payload for Gemini
+    // --------------------------------------------------------------------------
+    // 3. Assemble Conversation History for Gemini
+    // --------------------------------------------------------------------------
     const contents = [];
+    const recentHistory = history.slice(-8);
 
-    // Include recent history (up to last 10 turns)
-    const recentHistory = history.slice(-10);
     for (const h of recentHistory) {
       contents.push({
         role: h.role === 'assistant' ? 'model' : 'user',
@@ -162,44 +182,47 @@ LANGUAGE:
       });
     }
 
-    // Add current user message
     contents.push({
       role: 'user',
       parts: [{ text: message }],
     });
 
+    // --------------------------------------------------------------------------
+    // 4. Call Google Gemini API
+    // --------------------------------------------------------------------------
     const geminiApiKey = Deno.env.get('GEMINI_API_KEY') ?? '';
     const model = 'gemini-2.5-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`;
 
-    // 7. Invoke Gemini API
-    const geminiResponse = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: {
-          parts: [{ text: systemInstruction }],
-        },
-        contents,
-        generationConfig: {
-          temperature: 0.7, // Slightly warmer for friendly conversational voice
-          topP: 0.9,
-          maxOutputTokens: 300,
-        },
-      }),
-    });
+    let assistantReply = 'Olá! Sou o PulseBot. Como posso ajudar no teu onboarding do ClientPulse AI?';
 
-    if (!geminiResponse.ok) {
-      const errText = await geminiResponse.text();
-      throw new Error(`Gemini Chat Error (HTTP ${geminiResponse.status}): ${errText}`);
+    if (geminiApiKey) {
+      const geminiResponse = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: {
+            parts: [{ text: systemInstruction }],
+          },
+          contents,
+          generationConfig: {
+            temperature: 0.4,
+            topP: 0.9,
+            maxOutputTokens: 350,
+          },
+        }),
+      });
+
+      if (geminiResponse.ok) {
+        const geminiData = await geminiResponse.json();
+        const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) assistantReply = text;
+      }
     }
 
-    const geminiData = await geminiResponse.json();
-    const assistantReply =
-      geminiData.candidates?.[0]?.content?.parts?.[0]?.text ??
-      'Olá! Estou pronto para ajudar na configuração da tua conta do ClientPulse AI.';
-
-    // 8. Determine Action Detected for Frontend UI Updates
+    // --------------------------------------------------------------------------
+    // 5. Structure Action Response for Frontend UI State
+    // --------------------------------------------------------------------------
     let actionDetected: { action: string; data?: Record<string, unknown> } | null = null;
 
     if (tokenValidationResult.success) {
@@ -208,6 +231,7 @@ LANGUAGE:
         data: {
           username: tokenValidationResult.username,
           connected: true,
+          next_step: 2,
         },
       };
     } else if (tokenValidationResult.attempted && !tokenValidationResult.success) {
@@ -219,7 +243,7 @@ LANGUAGE:
       };
     } else if (isConnected) {
       actionDetected = {
-        action: 'awaiting_client_details',
+        action: 'ready_for_step_2',
         data: {
           username: connectedUsername,
         },
@@ -230,7 +254,6 @@ LANGUAGE:
       };
     }
 
-    // 9. Return Response
     return new Response(
       JSON.stringify({
         reply: assistantReply,

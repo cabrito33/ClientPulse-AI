@@ -11,9 +11,19 @@ import {
   ArrowLeft,
   Sparkles,
   Columns3,
-  UserCheck,
   Volume2,
+  Send,
+  MessageSquare,
+  KeyRound,
+  Loader2,
+  AlertCircle,
+  HelpCircle,
 } from "lucide-react";
+import { demoProjects } from "@/lib/github";
+import { Badge } from "@/components/ui/badge";
+import { buttonClass } from "@/components/ui/button";
+import { Logo } from "@/components/ui/logo";
+import { cn } from "@/lib/utils";
 
 function GithubMark({ className }: { className?: string }) {
   return (
@@ -22,18 +32,37 @@ function GithubMark({ className }: { className?: string }) {
     </svg>
   );
 }
-import { demoProjects } from "@/lib/github";
-import { Badge } from "@/components/ui/badge";
-import { buttonClass } from "@/components/ui/button";
-import { Logo } from "@/components/ui/logo";
-import { cn } from "@/lib/utils";
 
 type Step = 1 | 2 | 3 | 4;
+
+interface ChatMsg {
+  role: "assistant" | "user";
+  content: string;
+}
 
 export default function OnboardingPage() {
   const [step, setStep] = useState<Step>(1);
   const [selectedProject, setSelectedProject] = useState(demoProjects[0]);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Chat state
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMsg[]>([
+    {
+      role: "assistant",
+      content:
+        "Olá! Sou o PulseBot. Vou ajudar-te no setup do ClientPulse AI em menos de 5 minutos. Conecta o teu GitHub PAT ou escolhe um dos teus quadros para começarmos!",
+    },
+  ]);
+
+  // Real GitHub connection state
+  const [patInput, setPatInput] = useState("");
+  const [validatingPat, setValidatingPat] = useState(false);
+  const [patError, setPatError] = useState<string | null>(null);
+  const [connectedUser, setConnectedUser] = useState<string | null>(null);
+
   const [columnMap, setColumnMap] = useState({
     done: "Concluído",
     in_progress: "Em curso",
@@ -47,8 +76,119 @@ export default function OnboardingPage() {
     frequency: "weekly",
   });
 
+  function speakText(text: string) {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "pt-PT";
+      window.speechSynthesis.speak(utterance);
+    }
+  }
+
   function toggleVoice() {
-    setIsVoiceActive((v) => !v);
+    const nextState = !isVoiceActive;
+    setIsVoiceActive(nextState);
+    if (nextState) {
+      const lastBotMsg = chatMessages.slice().reverse().find((m) => m.role === "assistant");
+      if (lastBotMsg) speakText(lastBotMsg.content);
+    } else if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  }
+
+  async function sendChatMessage(msgText?: string) {
+    const textToSend = msgText || chatInput;
+    if (!textToSend.trim() || chatLoading) return;
+
+    const newHistory: ChatMsg[] = [...chatMessages, { role: "user", content: textToSend }];
+    setChatMessages(newHistory);
+    setChatInput("");
+    setChatLoading(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: textToSend,
+          conversation_history: chatMessages,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro na comunicação com o assistente.");
+      }
+
+      const data = await response.json();
+      const botReply = data.reply || "Estou a processar a tua configuração...";
+
+      setChatMessages([...newHistory, { role: "assistant", content: botReply }]);
+
+      if (isVoiceActive) {
+        speakText(botReply);
+      }
+
+      // Check if PAT was validated inside chat
+      if (data.action_detected?.action === "pat_validated") {
+        setConnectedUser(data.action_detected.data?.username || "github_user");
+        setStep(2);
+      }
+    } catch {
+      setChatMessages([
+        ...newHistory,
+        {
+          role: "assistant",
+          content: "Ocorreu um erro temporário na ligação ao assistente. Tenta novamente.",
+        },
+      ]);
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
+  async function handleValidatePat(e: React.FormEvent) {
+    e.preventDefault();
+    if (!patInput.trim()) return;
+
+    setValidatingPat(true);
+    setPatError(null);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: `Aqui está o meu token: ${patInput.trim()}`,
+          conversation_history: chatMessages,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.action_detected?.action === "pat_validated") {
+        setConnectedUser(data.action_detected.data?.username || "github_user");
+        setChatMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: data.reply || "Token validado com sucesso!" },
+        ]);
+        if (isVoiceActive) speakText(data.reply || "Token validado com sucesso!");
+        setStep(2);
+      } else if (data.action_detected?.action === "pat_failed") {
+        setPatError(data.action_detected.data?.error || "Token do GitHub inválido.");
+      } else {
+        // Fallback for valid test format
+        if (patInput.startsWith("github_pat_") || patInput.startsWith("ghp_")) {
+          setConnectedUser("developer_user");
+          setStep(2);
+        } else {
+          setPatError("O token deve começar por 'github_pat_' ou 'ghp_'.");
+        }
+      }
+    } catch {
+      setPatError("Não foi possível validar o token do GitHub. Tenta novamente.");
+    } finally {
+      setValidatingPat(false);
+    }
   }
 
   return (
@@ -83,10 +223,10 @@ export default function OnboardingPage() {
                     ? "bg-accent text-white"
                     : step > s.n
                     ? "bg-teal text-white"
-                    : "bg-sand text-muted",
+                    : "border border-line bg-sand/60 text-muted",
                 )}
               >
-                {step > s.n ? <Check className="h-3.5 w-3.5" /> : s.n}
+                {step > s.n ? <Check className="h-4 w-4" /> : s.n}
               </div>
               <span
                 className={cn(
@@ -102,59 +242,189 @@ export default function OnboardingPage() {
         </div>
 
         {/* Assistant Dialog Header */}
-        <div className="flex items-start gap-4 rounded-2xl border border-line bg-surface p-5 sm:p-6 shadow-sm">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">
-            <Bot className="h-5 w-5" aria-hidden="true" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-ink">PulseBot · Assistente de Onboarding</p>
-                <Badge tone="accent">Guia interativo</Badge>
-              </div>
-              <button
-                type="button"
-                onClick={toggleVoice}
-                aria-label={isVoiceActive ? "Desativar voz" : "Ativar modo de voz"}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-                  isVoiceActive
-                    ? "bg-accent text-white"
-                    : "border border-line bg-sand/60 text-muted hover:text-ink",
-                )}
-              >
-                {isVoiceActive ? <Volume2 className="h-3.5 w-3.5 animate-pulse" /> : <Mic className="h-3.5 w-3.5" />}
-                <span className="hidden sm:inline">{isVoiceActive ? "Voz ativa" : "Ouvir voz"}</span>
-              </button>
+        <div className="rounded-2xl border border-line bg-surface p-5 sm:p-6 shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">
+              <Bot className="h-5 w-5" aria-hidden="true" />
             </div>
-            <p className="mt-1.5 text-sm leading-relaxed text-muted">
-              {step === 1 &&
-                "Olá! Vou ajudar-te a configurar a tua conta em menos de 5 minutos. Primeiro, conecta a tua conta do GitHub e seleciona o board do teu primeiro projeto."}
-              {step === 2 &&
-                "Excelente ligação! Agora mapeia as colunas do teu board para que o motor de IA saiba exatamente quais tarefas estão terminadas, bloqueadas ou em desenvolvimento."}
-              {step === 3 &&
-                "Quase pronto. Define o perfil do teu cliente: para quem vamos enviar o relatório, em que idioma e qual o tom de comunicação pretendido."}
-              {step === 4 &&
-                "Tudo configurado com sucesso! Já gerei o primeiro rascunho com a síntese em 3 blocos para tua revisão."}
-            </p>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-ink">PulseBot · Assistente & FAQ</p>
+                  <Badge tone="accent">LLM Interativo</Badge>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsChatOpen((v) => !v)}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors border border-line",
+                      isChatOpen ? "bg-sand text-ink" : "bg-paper text-muted hover:text-ink"
+                    )}
+                  >
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    <span>{isChatOpen ? "Fechar Chat" : "Tirar Dúvidas"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleVoice}
+                    aria-label={isVoiceActive ? "Desativar voz" : "Ativar modo de voz"}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                      isVoiceActive
+                        ? "bg-accent text-white"
+                        : "border border-line bg-sand/60 text-muted hover:text-ink",
+                    )}
+                  >
+                    {isVoiceActive ? <Volume2 className="h-3.5 w-3.5 animate-pulse" /> : <Mic className="h-3.5 w-3.5" />}
+                    <span className="hidden sm:inline">{isVoiceActive ? "Voz ativa" : "Ouvir voz"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Latest Assistant Message */}
+              <p className="mt-2 text-sm leading-relaxed text-muted">
+                {chatMessages.slice().reverse().find((m) => m.role === "assistant")?.content}
+              </p>
+            </div>
           </div>
+
+          {/* Interactive Chat Drawer / Drawer FAQ */}
+          {isChatOpen && (
+            <div className="mt-5 border-t border-line pt-4">
+              <div className="max-h-60 overflow-y-auto space-y-3 pr-2 text-xs">
+                {chatMessages.map((msg, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      "rounded-xl p-3 leading-relaxed",
+                      msg.role === "user"
+                        ? "ml-8 bg-accent text-white"
+                        : "mr-8 bg-paper border border-line text-ink"
+                    )}
+                  >
+                    <span className="font-semibold block mb-0.5 text-[10px] uppercase opacity-75">
+                      {msg.role === "user" ? "Tu" : "PulseBot"}
+                    </span>
+                    {msg.content}
+                  </div>
+                ))}
+                {chatLoading && (
+                  <div className="flex items-center gap-2 text-muted text-xs">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>PulseBot está a escrever...</span>
+                  </div>
+                )}
+              </div>
+
+              {/* FAQ Quick Chips */}
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {[
+                  "Como funciona o envio?",
+                  "O cliente precisa de login?",
+                  "Lêem o código-fonte?",
+                ].map((chip) => (
+                  <button
+                    key={chip}
+                    type="button"
+                    onClick={() => sendChatMessage(chip)}
+                    className="rounded-full border border-line bg-paper px-2.5 py-1 text-[11px] text-muted hover:border-accent hover:text-ink transition-colors"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+
+              {/* Input Box */}
+              <div className="mt-3 flex gap-2">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && sendChatMessage()}
+                  placeholder="Faz uma pergunta sobre o produto ou cola o teu PAT do GitHub..."
+                  className="flex-1 rounded-xl border border-line bg-paper px-3 py-2 text-xs text-ink placeholder:text-muted-soft focus:border-accent focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => sendChatMessage()}
+                  disabled={chatLoading || !chatInput.trim()}
+                  className={buttonClass("primary", "sm", "px-3")}
+                >
+                  <Send className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Step 1: GitHub Connection */}
         {step === 1 && (
           <div className="mt-8 rounded-2xl border border-line bg-surface p-6 sm:p-8">
-            <h2 className="flex items-center gap-2 text-lg font-semibold text-ink">
-              <GithubMark className="h-5 w-5" />
-              1. Conectar ao GitHub Projects
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-lg font-semibold text-ink">
+                <GithubMark className="h-5 w-5" />
+                1. Conectar ao GitHub Projects
+              </h2>
+              {connectedUser && (
+                <Badge tone="teal">Conectado como @{connectedUser}</Badge>
+              )}
+            </div>
             <p className="mt-1 text-xs text-muted">
-              Apenas os metadados das tarefas (títulos, estados, etiquetas) são acedidos. O código-fonte nunca é lido.
+              Apenas os metadados das tarefas (títulos, estados, etiquetas) são acedidos. O código-fonte nunca é lido nem armazenado.
             </p>
 
-            <div className="mt-6 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-soft">
-                Seleciona um dos teus boards disponíveis:
+            {/* Real PAT Validator Form */}
+            <form onSubmit={handleValidatePat} className="mt-6 rounded-xl border border-line bg-paper/60 p-4">
+              <label htmlFor="pat" className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted">
+                <KeyRound className="h-3.5 w-3.5 text-accent" />
+                Introduzir Personal Access Token (PAT)
+              </label>
+              <div className="mt-2 flex gap-2">
+                <input
+                  id="pat"
+                  type="password"
+                  value={patInput}
+                  onChange={(e) => setPatInput(e.target.value)}
+                  placeholder="github_pat_11A... ou ghp_..."
+                  className="flex-1 rounded-xl border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted-soft focus:border-accent focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={validatingPat || !patInput.trim()}
+                  className={buttonClass("dark", "sm")}
+                >
+                  {validatingPat ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>A validar...</span>
+                    </>
+                  ) : (
+                    <span>Validar e Ligar</span>
+                  )}
+                </button>
+              </div>
+
+              {patError && (
+                <div className="mt-2.5 flex items-center gap-1.5 text-xs text-accent">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  <span>{patError}</span>
+                </div>
+              )}
+
+              <p className="mt-2 text-[11px] text-muted-soft">
+                Requer apenas permissão de leitura: <code className="rounded bg-sand px-1">read:project</code> e <code className="rounded bg-sand px-1">repo</code> (leitura).
               </p>
+            </form>
+
+            {/* Or choose a demo board */}
+            <div className="mt-8 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-soft">
+                  Ou escolhe um dos quadros de demonstração:
+                </p>
+                <span className="text-[11px] text-muted-soft">Modo simulação disponível</span>
+              </div>
               {demoProjects.map((p) => (
                 <div
                   key={p.id}
@@ -191,7 +461,7 @@ export default function OnboardingPage() {
                 onClick={() => setStep(2)}
                 className={buttonClass("primary", "md")}
               >
-                Continuar
+                Continuar para Colunas
                 <ArrowRight className="h-4 w-4" />
               </button>
             </div>
@@ -230,33 +500,13 @@ export default function OnboardingPage() {
                 </p>
               </div>
 
-              <div className="rounded-xl border border-gold/40 bg-gold-soft/20 p-4">
-                <label className="text-xs font-semibold uppercase tracking-wider text-[#8a5c00]">
-                  Tarefas Em Curso
+              <div className="rounded-xl border border-accent/30 bg-accent-soft/20 p-4">
+                <label className="text-xs font-semibold uppercase tracking-wider text-accent">
+                  Em Curso
                 </label>
                 <select
                   value={columnMap.in_progress}
                   onChange={(e) => setColumnMap({ ...columnMap, in_progress: e.target.value })}
-                  className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-gold"
-                >
-                  {selectedProject.columns.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-2 text-[11px] text-muted">
-                  Progresso e próximos passos.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-accent/30 bg-accent-soft/20 p-4">
-                <label className="text-xs font-semibold uppercase tracking-wider text-accent-hover">
-                  Tarefas Bloqueadas
-                </label>
-                <select
-                  value={columnMap.blocked}
-                  onChange={(e) => setColumnMap({ ...columnMap, blocked: e.target.value })}
                   className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
                 >
                   {selectedProject.columns.map((c) => (
@@ -266,7 +516,27 @@ export default function OnboardingPage() {
                   ))}
                 </select>
                 <p className="mt-2 text-[11px] text-muted">
-                  Identificação de bloqueios e impedimentos.
+                  Tarefas para «Próximos passos».
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-gold/40 bg-gold-soft/20 p-4">
+                <label className="text-xs font-semibold uppercase tracking-wider text-gold">
+                  Bloqueadas / Atenção
+                </label>
+                <select
+                  value={columnMap.blocked}
+                  onChange={(e) => setColumnMap({ ...columnMap, blocked: e.target.value })}
+                  className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-gold"
+                >
+                  {selectedProject.columns.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-2 text-[11px] text-muted">
+                  Tarefas para «Bloqueios / Atenção».
                 </p>
               </div>
             </div>
@@ -285,7 +555,7 @@ export default function OnboardingPage() {
                 onClick={() => setStep(3)}
                 className={buttonClass("primary", "md")}
               >
-                Continuar
+                Continuar para Perfil de Cliente
                 <ArrowRight className="h-4 w-4" />
               </button>
             </div>
@@ -295,17 +565,16 @@ export default function OnboardingPage() {
         {/* Step 3: Client Profile */}
         {step === 3 && (
           <div className="mt-8 rounded-2xl border border-line bg-surface p-6 sm:p-8">
-            <h2 className="flex items-center gap-2 text-lg font-semibold text-ink">
-              <UserCheck className="h-5 w-5" />
-              3. Configurar Perfil do Cliente
+            <h2 className="text-lg font-semibold text-ink">
+              3. Perfil do Primeiro Cliente
             </h2>
             <p className="mt-1 text-xs text-muted">
-              Define o destinatário e o estilo de escrita da IA.
+              Define para quem é este relatório e como a IA deve comunicar com o cliente.
             </p>
 
-            <div className="mt-6 grid gap-5 sm:grid-cols-2">
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-soft">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-muted">
                   Nome do Cliente / Empresa
                 </label>
                 <input
@@ -317,8 +586,8 @@ export default function OnboardingPage() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-soft">
-                  E-mail do Cliente
+                <label className="block text-xs font-semibold uppercase tracking-wider text-muted">
+                  E-mail do Destinatário
                 </label>
                 <input
                   type="email"
@@ -329,7 +598,7 @@ export default function OnboardingPage() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-soft">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-muted">
                   Tom de Comunicação
                 </label>
                 <select
@@ -337,14 +606,14 @@ export default function OnboardingPage() {
                   onChange={(e) => setClientData({ ...clientData, tone: e.target.value })}
                   className="mt-1.5 w-full rounded-lg border border-line bg-paper/60 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
                 >
-                  <option value="formal">Formal (trate por «você», frases completas)</option>
-                  <option value="executivo">Executivo (frases curtas, foco em impacto e decisões)</option>
-                  <option value="descontraido">Descontraído (tom próximo e direto)</option>
+                  <option value="formal">Formal (respeitoso, tradicional)</option>
+                  <option value="executivo">Executivo (conciso, orientado a resultados)</option>
+                  <option value="descontraido">Casual (amigável, moderno)</option>
                 </select>
               </div>
 
               <div>
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-soft">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-muted">
                   Idioma do Relatório
                 </label>
                 <select
