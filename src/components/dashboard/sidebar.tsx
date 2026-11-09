@@ -1,7 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   FileText,
@@ -9,10 +10,13 @@ import {
   Sparkles,
   Settings,
   ArrowUpRight,
+  LogOut,
+  LogIn,
 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
 
 const nav = [
   { href: "/dashboard", label: "Visão geral", icon: LayoutDashboard, exact: true },
@@ -22,6 +26,49 @@ const nav = [
 
 export function DashboardSidebar({ pending }: { pending: number }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+
+  useEffect(() => {
+    async function loadUser() {
+      try {
+        const supabase = createClient();
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (authUser) {
+          const name =
+            authUser.user_metadata?.full_name ||
+            authUser.user_metadata?.name ||
+            authUser.email?.split("@")[0] ||
+            "Utilizador";
+          setUser({ name, email: authUser.email || "" });
+        }
+      } catch {
+        // Fallback for mock/demo mode
+      }
+    }
+    loadUser();
+  }, []);
+
+  async function handleSignOut() {
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      router.push("/login");
+      router.refresh();
+    } catch {
+      router.push("/login");
+    }
+  }
+
+  const initials = user?.name
+    ? user.name
+        .split(" ")
+        .map((p) => p[0])
+        .slice(0, 2)
+        .join("")
+        .toUpperCase()
+    : "MD";
 
   return (
     <aside className="hidden w-[248px] shrink-0 flex-col border-r border-line bg-sand/40 lg:flex">
@@ -91,18 +138,45 @@ export function DashboardSidebar({ pending }: { pending: number }) {
       </div>
 
       <div className="border-t border-line p-3">
-        <div className="flex items-center gap-2.5 rounded-xl bg-surface p-2.5">
-          <span className="grid h-8 w-8 place-items-center rounded-full bg-ink text-[11px] font-semibold text-paper">
-            MD
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[12.5px] font-medium text-ink">Maria Duarte</p>
-            <p className="truncate text-[10.5px] text-muted">Studio Duarte · demo</p>
+        <div className="flex items-center justify-between rounded-xl bg-surface p-2.5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-ink text-[11px] font-semibold text-paper">
+              {initials}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12.5px] font-medium text-ink">
+                {user?.name || "Maria Duarte"}
+              </p>
+              <p className="truncate text-[10.5px] text-muted">
+                {user?.email || "Studio Duarte · demo"}
+              </p>
+            </div>
           </div>
+          {user ? (
+            <button
+              onClick={handleSignOut}
+              title="Terminar sessão"
+              aria-label="Terminar sessão"
+              className="grid h-8 w-8 place-items-center rounded-lg text-muted transition-colors hover:bg-accent/10 hover:text-accent"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          ) : (
+            <Link
+              href="/login"
+              title="Iniciar sessão"
+              aria-label="Iniciar sessão"
+              className="grid h-8 w-8 place-items-center rounded-lg text-muted transition-colors hover:bg-sand hover:text-ink"
+            >
+              <LogIn className="h-4 w-4" />
+            </Link>
+          )}
         </div>
-        <Badge tone="gold" className="mt-2 w-full justify-center">
-          Dados de demonstração
-        </Badge>
+        {!user && (
+          <Badge tone="gold" className="mt-2 w-full justify-center">
+            Dados de demonstração
+          </Badge>
+        )}
       </div>
     </aside>
   );

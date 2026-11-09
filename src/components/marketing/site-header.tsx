@@ -58,6 +58,9 @@ export function SiteHeader() {
         </nav>
 
         <div className="hidden items-center gap-2 md:flex">
+          <ButtonLink href="/login" variant="ghost" size="sm">
+            Entrar
+          </ButtonLink>
           <ButtonLink href="/dashboard" variant="ghost" size="sm">
             Dashboard
           </ButtonLink>
@@ -93,6 +96,9 @@ export function SiteHeader() {
             ))}
           </nav>
           <div className="mt-5 flex flex-col gap-2">
+            <ButtonLink href="/login" variant="secondary" onClick={() => setOpen(false)}>
+              Iniciar sessão
+            </ButtonLink>
             <ButtonLink href="/dashboard" variant="secondary" onClick={() => setOpen(false)}>
               Entrar no dashboard (demo)
             </ButtonLink>
