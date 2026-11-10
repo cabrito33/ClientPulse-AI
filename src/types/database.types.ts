@@ -482,6 +482,12 @@ export interface Database {
         };
         Returns: Json | null;
       };
+      sync_client_sprint_metrics: {
+        Args: {
+          p_client_id: string;
+        };
+        Returns: Json;
+      };
     };
     Enums: {
       [_ in never]: never;

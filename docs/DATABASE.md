@@ -445,3 +445,4 @@ ORDER BY relname;
 | `supabase/migrations/003_be_01_complete_schema.sql` | `profiles`, `sprint_metrics`, `portal_tokens`, `delivery_logs` |
 | `supabase/migrations/004_be_02_rls_policies.sql` | Completude: `get_my_agency_id()`, INSERT em `agencies`/`profiles`, correcções |
 | `supabase/migrations/005_be_02_portal_rpc.sql` | RPC `get_portal_data_by_token` (SECURITY DEFINER) + revogação de SELECT direto para anon |
+| `supabase/migrations/006_be_25_sprint_metrics.sql` | Constraint UNIQUE (client_id, sprint), triggers de cálculo automático a partir de `reports` e `report_tasks`, RPC `sync_client_sprint_metrics` |

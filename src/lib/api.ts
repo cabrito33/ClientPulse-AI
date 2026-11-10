@@ -601,7 +601,144 @@ export async function getSprintMetrics(clientId: string): Promise<SprintMetric[]
     console.warn(`[api] getSprintMetrics(${clientId}):`, result.error.message);
     return [];
   }
-  return (result.data ?? []).map(mapSprintMetric);
+
+  let rows = (result.data as SprintMetricRow[] | null) ?? [];
+
+  // Auto-backfill if client has reports but no sprint_metrics yet
+  if (rows.length === 0 && isUUID(clientId)) {
+    rows = await syncSprintMetricsFromReports(clientId);
+  }
+
+  return rows.map(mapSprintMetric);
+}
+
+/**
+ * Synchronizes and calculates sprint_metrics from existing reports for a client.
+ * Dispatched automatically or on demand when metrics are synced.
+ */
+export async function syncSprintMetricsFromReports(
+  clientId: string,
+): Promise<SprintMetricRow[]> {
+  if (!isUUID(clientId)) return [];
+
+  const supabase = await createClient();
+
+  // 1. Try database RPC function first
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rpcRes = await (supabase.rpc as any)("sync_client_sprint_metrics", {
+      p_client_id: clientId,
+    });
+    if (!rpcRes.error && rpcRes.data?.metrics?.length > 0) {
+      const refreshed = await supabase
+        .from("sprint_metrics")
+        .select("*")
+        .eq("client_id", clientId)
+        .order("sprint");
+      if (refreshed.data && refreshed.data.length > 0) {
+        return refreshed.data as SprintMetricRow[];
+      }
+    }
+  } catch {
+    // Fall back to client-side derivation below
+  }
+
+  // 2. Fallback: derive metrics from client reports directly
+  const { data: reports, error } = await supabase
+    .from("reports")
+    .select("*")
+    .eq("client_id", clientId)
+    .order("period_end", { ascending: true });
+
+  if (error || !reports || reports.length === 0) return [];
+
+  const metricsToUpsert: {
+    client_id: string;
+    agency_id: string;
+    sprint: string;
+    label: string;
+    completed: number;
+    planned: number;
+  }[] = [];
+
+  for (const r of reports as ReportRow[]) {
+    const weekNum = isoWeekNumber(r.period_end);
+    const sprint = `S${weekNum}`;
+    const label = `Semana ${weekNum}`;
+    const counts = extractTaskCounts(r.raw_github_data);
+
+    let completed = counts.tasksCompleted;
+    let planned = counts.tasksPlanned;
+
+    if (planned === 0 && r.summary_done) {
+      completed = splitLines(r.summary_done).length;
+      planned = completed;
+    }
+
+    metricsToUpsert.push({
+      client_id: r.client_id,
+      agency_id: r.agency_id,
+      sprint,
+      label,
+      completed,
+      planned,
+    });
+  }
+
+  if (metricsToUpsert.length > 0) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase.from("sprint_metrics") as any).upsert(metricsToUpsert, {
+        onConflict: "client_id,sprint",
+      });
+    } catch (e) {
+      console.warn("[api] Error upserting derived sprint metrics:", e);
+    }
+  }
+
+  const result = await supabase
+    .from("sprint_metrics")
+    .select("*")
+    .eq("client_id", clientId)
+    .order("sprint");
+
+  return (result.data as SprintMetricRow[] | null) ?? [];
+}
+
+/**
+ * Manually records or updates a sprint metric for a client.
+ */
+export async function recordSprintMetric(data: {
+  clientId: string;
+  agencyId: string;
+  sprint: string;
+  label: string;
+  completed: number;
+  planned: number;
+}): Promise<SprintMetric | null> {
+  const supabase = await createClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = await (supabase.from("sprint_metrics") as any)
+    .upsert(
+      {
+        client_id: data.clientId,
+        agency_id: data.agencyId,
+        sprint: data.sprint,
+        label: data.label,
+        completed: data.completed,
+        planned: data.planned,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "client_id,sprint" },
+    )
+    .select("*")
+    .single();
+
+  if (result.error) {
+    console.warn("[api] recordSprintMetric error:", result.error.message);
+    return null;
+  }
+  return mapSprintMetric(result.data as SprintMetricRow);
 }
 
 /* ------------------------------------------------------------------ */

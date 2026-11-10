@@ -34,13 +34,17 @@ const columnMeta = {
 };
 
 export default async function DashboardPage() {
-  const [summary, reports, clients, cards, metrics] = await Promise.all([
+  const [summary, reports, clients, cards] = await Promise.all([
     getDashboardSummary(),
     getReports(),
     getClients(),
     getSprintCards(),
-    getSprintMetrics("atelier-mira"),
   ]);
+
+  const featuredClient = clients[0] ?? null;
+  const metrics = featuredClient
+    ? await getSprintMetrics(featuredClient.id)
+    : [];
 
   const pending = reports.filter((r) => r.status === "pending_approval" || r.status === "draft");
   const sent = reports.filter((r) => r.status === "sent");
@@ -324,12 +328,16 @@ export default async function DashboardPage() {
               </h2>
               <p className="mt-0.5 text-[11.5px] text-muted">Semana 42 · GitHub Projects (demo)</p>
             </div>
-            <Badge tone="muted">Atelier Mira</Badge>
+            <Badge tone="muted">{featuredClient ? featuredClient.company : "Sem clientes"}</Badge>
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             {(["done", "in_progress", "blocked"] as const).map((col) => {
-              const items = cards.filter((c) => c.column === col && c.clientId === "atelier-mira");
+              const items = cards.filter(
+                (c) =>
+                  c.column === col &&
+                  (!featuredClient || c.clientId === featuredClient.id || c.clientId === "atelier-mira"),
+              );
               const meta = columnMeta[col];
               return (
                 <div key={col} className={cn("rounded-xl p-2.5", meta.bg)}>
@@ -369,7 +377,9 @@ export default async function DashboardPage() {
           <h2 id="andamento" className="text-[14.5px] font-semibold text-ink">
             Concluídas vs. planeadas
           </h2>
-          <p className="mt-0.5 text-[11.5px] text-muted">Atelier Mira · últimas 7 semanas</p>
+          <p className="mt-0.5 text-[11.5px] text-muted">
+            {featuredClient ? featuredClient.company : "Geral"} · métricas de sprint
+          </p>
           <div className="mt-4">
             <PlannedVsCompletedChart data={metrics} />
           </div>

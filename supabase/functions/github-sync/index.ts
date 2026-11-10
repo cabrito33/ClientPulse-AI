@@ -146,10 +146,84 @@ Deno.serve(async (req: Request) => {
         });
       }
 
+      // ------------------------------------------------------------------------
+      // Action: sync-metrics
+      // ------------------------------------------------------------------------
+      case 'sync-metrics': {
+        const clientId = body.client_id;
+        if (!clientId) {
+          return new Response(JSON.stringify({ error: "Missing required 'client_id' parameter." }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const supabase = createUserClient(req);
+        const { data: client, error: clientErr } = await supabase
+          .from('clients')
+          .select('id, agency_id, github_project_id, column_mapping')
+          .eq('id', clientId)
+          .single();
+
+        if (clientErr || !client) {
+          return new Response(JSON.stringify({ error: `Client '${clientId}' not found.` }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const tasks = await fetchBoardTasks(
+          token,
+          client.github_project_id,
+          client.column_mapping ?? {},
+          days_ago ?? 7
+        );
+
+        const now = new Date();
+        const jan4 = new Date(Date.UTC(now.getUTCFullYear(), 0, 4));
+        const startOfWeek1 = jan4.getTime() - (jan4.getUTCDay() || 7) * 86400000 + 86400000;
+        const weekNum = Math.ceil((now.getTime() - startOfWeek1) / (7 * 86400000)) + 1;
+        const sprintCode = `S${weekNum}`;
+        const sprintLabel = `Semana ${weekNum}`;
+
+        const { data: metric, error: metricErr } = await supabase
+          .from('sprint_metrics')
+          .upsert({
+            client_id: client.id,
+            agency_id: client.agency_id,
+            sprint: sprintCode,
+            label: sprintLabel,
+            completed: tasks.done.length,
+            planned: tasks.all.length,
+            updated_at: now.toISOString(),
+          }, { onConflict: 'client_id,sprint' })
+          .select()
+          .single();
+
+        if (metricErr) {
+          throw new Error(`Failed to save sprint metric: ${metricErr.message}`);
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            client_id: client.id,
+            metric,
+            tasks_count: {
+              total: tasks.all.length,
+              done: tasks.done.length,
+              in_progress: tasks.inProgress.length,
+              blocked: tasks.blocked.length,
+            },
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       default: {
         return new Response(
           JSON.stringify({
-            error: `Unknown action '${action}'. Valid actions are: test-connection, list-projects, fetch-columns, fetch-board-data.`,
+            error: `Unknown action '${action}'. Valid actions are: test-connection, list-projects, fetch-columns, fetch-board-data, sync-metrics.`,
           }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );

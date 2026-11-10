@@ -163,7 +163,27 @@ Deno.serve(async (req: Request) => {
       await supabase.from('report_tasks').insert(taskInserts);
     }
 
-    // 11. Return Success Response
+    // 11. Calculate and Save/Upsert Sprint Metrics for this period
+    const d = new Date(periodEndStr + 'T12:00:00Z');
+    const jan4 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+    const startOfWeek1 = jan4.getTime() - (jan4.getUTCDay() || 7) * 86400000 + 86400000;
+    const weekNum = Math.ceil((d.getTime() - startOfWeek1) / (7 * 86400000)) + 1;
+    const sprintCode = `S${weekNum}`;
+    const sprintLabel = `Semana ${weekNum}`;
+    const completedCount = tasks.done.length;
+    const plannedCount = tasks.all.length;
+
+    await supabase.from('sprint_metrics').upsert({
+      client_id: client.id,
+      agency_id: client.agency_id,
+      sprint: sprintCode,
+      label: sprintLabel,
+      completed: completedCount,
+      planned: plannedCount,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'client_id,sprint' });
+
+    // 12. Return Success Response
     return new Response(
       JSON.stringify({
         success: true,
@@ -175,6 +195,12 @@ Deno.serve(async (req: Request) => {
           end: periodEndStr,
         },
         blocks: reportBlocks,
+        sprint_metric: {
+          sprint: sprintCode,
+          label: sprintLabel,
+          completed: completedCount,
+          planned: plannedCount,
+        },
         tasks_count: {
           total: tasks.all.length,
           done: tasks.done.length,
