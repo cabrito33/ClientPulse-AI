@@ -72,22 +72,22 @@ CREATE TABLE IF NOT EXISTS public.clients (
     name TEXT NOT NULL,
     email TEXT NOT NULL,
     company_name TEXT,
-    communication_tone TEXT NOT NULL DEFAULT 'executive' 
+    communication_tone TEXT NOT NULL DEFAULT 'executive'
         CHECK (communication_tone IN ('formal', 'executive', 'casual')),
-    language TEXT NOT NULL DEFAULT 'pt' 
+    language TEXT NOT NULL DEFAULT 'pt'
         CHECK (language IN ('pt', 'en')),
     github_project_id TEXT NOT NULL,
     github_project_owner TEXT NOT NULL,
-    github_project_type TEXT NOT NULL DEFAULT 'organization' 
+    github_project_type TEXT NOT NULL DEFAULT 'organization'
         CHECK (github_project_type IN ('user', 'organization')),
     column_mapping JSONB NOT NULL DEFAULT '{
         "done": ["Done"],
         "in_progress": ["In Progress"],
         "blocked": ["Blocked"]
     }'::jsonb,
-    schedule_day_of_week INT NOT NULL DEFAULT 5 
+    schedule_day_of_week INT NOT NULL DEFAULT 5
         CHECK (schedule_day_of_week BETWEEN 0 AND 6), -- 0=Sunday, 5=Friday
-    schedule_hour_utc INT NOT NULL DEFAULT 9 
+    schedule_hour_utc INT NOT NULL DEFAULT 9
         CHECK (schedule_hour_utc BETWEEN 0 AND 23),    -- 09:00 UTC (10:00 Lisbon)
     auto_send_enabled BOOLEAN NOT NULL DEFAULT false, -- If true, bypasses manual dashboard review
     portal_token UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(), -- Permanent zero-login access token
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS public.reports (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     client_id UUID NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
     agency_id UUID NOT NULL REFERENCES public.agencies(id) ON DELETE CASCADE,
-    status TEXT NOT NULL DEFAULT 'draft' 
+    status TEXT NOT NULL DEFAULT 'draft'
         CHECK (status IN ('draft', 'approved', 'sent', 'failed')),
     period_start DATE NOT NULL,
     period_end DATE NOT NULL,
@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS public.report_tasks (
     client_id UUID NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
     github_item_id TEXT NOT NULL,
     title TEXT NOT NULL,
-    status_category TEXT NOT NULL 
+    status_category TEXT NOT NULL
         CHECK (status_category IN ('done', 'in_progress', 'blocked')),
     assignee TEXT,
     labels TEXT[] NOT NULL DEFAULT '{}',
@@ -324,11 +324,11 @@ DECLARE
 BEGIN
     -- 1. Grab the first user from auth.users (or use a test UUID)
     SELECT id INTO v_user_id FROM auth.users LIMIT 1;
-    
+
     IF v_user_id IS NOT NULL THEN
         -- Get or create agency for this user
         SELECT id INTO v_agency_id FROM public.agencies WHERE user_id = v_user_id;
-        
+
         IF v_agency_id IS NULL THEN
             INSERT INTO public.agencies (user_id, name)
             VALUES (v_user_id, 'Agência Web Inovação')
