@@ -125,7 +125,7 @@ function mapClient(row: ClientRow): Client {
  * summary_next_steps) while the UI expects a structured `sections` object
  * and a rendered `body` string. We reconstruct both here.
  */
-function mapReport(row: ReportRow): Report {
+function mapReport(row: ReportRow, customErrorMessage?: string | null): Report {
   // Parse the three summary columns into the structured section shape.
   const sections: ReportSection = {
     done: splitLines(row.summary_done),
@@ -152,8 +152,16 @@ function mapReport(row: ReportRow): Report {
     draft: "draft",
     approved: "pending_approval",
     sent: "sent",
-    failed: "draft",
+    failed: "failed",
   };
+
+  const status = statusMap[row.status] ?? "draft";
+  const errorMessage =
+    customErrorMessage !== undefined
+      ? customErrorMessage
+      : status === "failed"
+        ? extractErrorMessage(row)
+        : null;
 
   return {
     id: row.id,
@@ -161,7 +169,7 @@ function mapReport(row: ReportRow): Report {
     weekLabel,
     periodStart: row.period_start,
     periodEnd: row.period_end,
-    status: statusMap[row.status] ?? "draft",
+    status,
     subject: `Relatório — ${weekLabel}`,
     intro: "",
     sections,
@@ -171,7 +179,23 @@ function mapReport(row: ReportRow): Report {
     generatedAt: row.created_at,
     sentAt: row.sent_at ?? null,
     openedAt: null, // delivery tracking not yet in schema
+    errorMessage,
   };
+}
+
+/** Extracts an error message for failed reports from raw_github_data or defaults. */
+function extractErrorMessage(row: ReportRow): string {
+  if (
+    row.raw_github_data &&
+    typeof row.raw_github_data === "object" &&
+    !Array.isArray(row.raw_github_data)
+  ) {
+    const raw = row.raw_github_data as Record<string, unknown>;
+    if (typeof raw.error === "string") return raw.error;
+    if (typeof raw.error_message === "string") return raw.error_message;
+    if (typeof raw.message === "string") return raw.message;
+  }
+  return "Falha na entrega de e-mail ao destinatário (serviço Resend).";
 }
 
 function mapSprintMetric(row: SprintMetricRow): SprintMetric {
@@ -324,7 +348,7 @@ export async function getReports(): Promise<Report[]> {
     .select("*")
     .order("period_start", { ascending: false });
   const rows = assertOk(result, "getReports");
-  return rows.map(mapReport);
+  return rows.map((r) => mapReport(r));
 }
 
 export async function getReport(id: string): Promise<Report | null> {
@@ -334,8 +358,33 @@ export async function getReport(id: string): Promise<Report | null> {
     .select("*")
     .eq("id", id)
     .maybeSingle();
-  const row = assertOk(result, `getReport(${id})`);
-  return row ? mapReport(row) : null;
+  if (result.error) {
+    throw new Error(`[api] getReport(${id}): ${result.error.message}`);
+  }
+  const row = result.data as ReportRow | null;
+  if (!row) return null;
+
+  let errorMessage: string | null = null;
+  if (row.status === "failed") {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const logRes: any = await supabase
+        .from("delivery_logs")
+        .select("error_message")
+        .eq("report_id", id)
+        .eq("status", "failed")
+        .order("sent_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (logRes.data?.error_message) {
+        errorMessage = logRes.data.error_message;
+      }
+    } catch {
+      // Fallback handled by mapReport
+    }
+  }
+
+  return mapReport(row, errorMessage);
 }
 
 export async function getReportsForClient(clientId: string): Promise<Report[]> {
@@ -346,7 +395,7 @@ export async function getReportsForClient(clientId: string): Promise<Report[]> {
     .eq("client_id", clientId)
     .order("period_start", { ascending: false });
   const rows = assertOk(result, `getReportsForClient(${clientId})`);
-  return rows.map(mapReport);
+  return rows.map((r) => mapReport(r));
 }
 
 export async function getPendingReports(): Promise<Report[]> {
@@ -359,7 +408,18 @@ export async function getPendingReports(): Promise<Report[]> {
     .in("status", ["draft", "approved"])
     .order("period_start", { ascending: false });
   const rows = assertOk(result, "getPendingReports");
-  return rows.map(mapReport);
+  return rows.map((r) => mapReport(r));
+}
+
+export async function getFailedReports(): Promise<Report[]> {
+  const supabase = await createClient();
+  const result = await supabase
+    .from("reports")
+    .select("*")
+    .eq("status", "failed")
+    .order("period_start", { ascending: false });
+  const rows = assertOk(result, "getFailedReports");
+  return rows.map((r) => mapReport(r));
 }
 
 export async function getSentReports(): Promise<Report[]> {
@@ -370,7 +430,7 @@ export async function getSentReports(): Promise<Report[]> {
     .eq("status", "sent")
     .order("sent_at", { ascending: false });
   const rows = assertOk(result, "getSentReports");
-  return rows.map(mapReport);
+  return rows.map((r) => mapReport(r));
 }
 
 /** Most recent report for a portal token, plus its history and metrics. */
@@ -434,16 +494,21 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   const allReports: ReportRow[] = (reportsResult.data as ReportRow[] | null) ?? [];
   let totalDone = 0;
   let totalPlanned = 0;
+  let failed = 0;
   for (const r of allReports) {
     const counts = extractTaskCounts(r.raw_github_data);
     totalDone += counts.tasksCompleted;
     totalPlanned += counts.tasksPlanned;
+    if (r.status === "failed") {
+      failed++;
+    }
   }
 
   return {
     pending,
     sentThisMonth,
     activeClients,
+    failed,
     avgCompletionRate: Math.round(
       (totalDone / Math.max(totalPlanned, 1)) * 100,
     ),
@@ -524,34 +589,60 @@ export async function approveAndSend(
   return mapReport(result.data as ReportRow);
 }
 
+/**
+ * Retries sending a failed report.
+ * Updates status to 'sent', updates timestamps and logs delivery.
+ */
+export async function resendReport(id: string): Promise<Report> {
+  const supabase = await createClient();
+  const now = new Date().toISOString();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = await (supabase.from("reports") as any)
+    .update({
+      status: "sent",
+      approved_at: now,
+      sent_at: now,
+      updated_at: now,
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (result.error) throw new Error(`[api] resendReport(${id}): ${result.error.message}`);
+  const reportRow = result.data as ReportRow;
+
+  // Insert audit record in delivery_logs if possible
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase.from("delivery_logs") as any).insert({
+      report_id: reportRow.id,
+      client_id: reportRow.client_id,
+      agency_id: reportRow.agency_id,
+      status: "sent",
+      email_service: "resend",
+      recipient_email: "client@pulse.local",
+      sent_at: now,
+    });
+  } catch (err) {
+    console.warn("[api] Could not insert delivery log on resend:", err);
+  }
+
+  return mapReport(reportRow);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Pure utilities — still exported for components that import them    */
 /* ------------------------------------------------------------------ */
 
-/** Parses a markdown-ish body back into the three mandatory blocks. */
-export function parseBodyToSections(body: string): ReportSection | null {
-  const grab = (heading: string, nextHeading?: string): string[] => {
-    const start = body.indexOf(heading);
-    if (start === -1) return [];
-    const after = body.slice(start + heading.length);
-    const end = nextHeading ? after.indexOf(nextHeading) : -1;
-    const chunk = end === -1 ? after : after.slice(0, end);
-    return chunk
-      .split("\n")
-      .map((l) => l.replace(/^\s*[-*]\s*/, "").trim())
-      .filter(Boolean);
-  };
-  const done = grab("## O que foi feito", "## Bloqueios");
-  const blocks = grab("## Bloqueios", "## Próximos passos");
-  const next = grab("## Próximos passos");
-  if (done.length + blocks.length + next.length === 0) return null;
-  return { done, blocks, next };
-}
+import { parseBodyToSections } from "@/lib/report-utils";
+export { parseBodyToSections };
 
 /**
  * @deprecated In-memory override — kept only for test isolation.
  * In production the DB is the single source of truth.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function applyReportOverride(_id: string, _patch: Partial<Report>) {
   // No-op: mutations now go directly to Supabase via approveAndSend.
 }
@@ -560,6 +651,7 @@ export function applyReportOverride(_id: string, _patch: Partial<Report>) {
  * @deprecated In-memory read with override — kept only for test isolation.
  * Use getReport(id) instead.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function readReportWithOverrides(_id: string): Report | null {
   return null;
 }

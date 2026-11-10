@@ -12,19 +12,22 @@ import {
   RotateCcw,
   Undo2,
   Bot,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import type { Client, Report, ReportSection } from "@/data/types";
 import { Badge } from "@/components/ui/badge";
 import { buttonClass } from "@/components/ui/button";
 import { cn, formatDateTime } from "@/lib/utils";
-import { parseBodyToSections } from "@/lib/api";
+import { parseBodyToSections } from "@/lib/report-utils";
+import { approveAndSendAction, resendReportAction } from "@/app/actions/reports";
 
 /** Parses edited markdown, falling back to the stored sections. */
 function parseBodyFallback(body: string, fallback: ReportSection): ReportSection {
   return parseBodyToSections(body) ?? fallback;
 }
 
-type SendState = "pending" | "sent";
+type SendState = "pending" | "sent" | "failed";
 
 const headings = {
   done: "## O que foi feito",
@@ -43,10 +46,13 @@ export function ReportReview({
 }) {
   const router = useRouter();
   const [body, setBody] = useState(report.body);
-  const [state, setState] = useState<SendState>(report.status === "sent" ? "sent" : "pending");
+  const [state, setState] = useState<SendState>(
+    report.status === "sent" ? "sent" : report.status === "failed" ? "failed" : "pending"
+  );
   const [autoSend, setAutoSend] = useState(client.autoSend);
   const [toast, setToast] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(report.errorMessage ?? null);
+  const [isPending, startTransition] = useTransition();
 
   const parsed = useMemo<ReportSection>(() => parseBodyFallback(body, report.sections), [body, report.sections]);
   const dirty = body !== report.body;
@@ -73,9 +79,33 @@ export function ReportReview({
   }
 
   function approve() {
-    setState("sent");
-    setToast(`Relatório aprovado e enviado para ${client.email}`);
-    startTransition(() => router.refresh());
+    setError(null);
+    startTransition(async () => {
+      const result = await approveAndSendAction(report.id, body);
+      if (result.success) {
+        setState("sent");
+        setToast(`Relatório aprovado e enviado para ${client.email}`);
+        router.refresh();
+      } else {
+        setState("failed");
+        setError(result.error);
+      }
+    });
+  }
+
+  function handleResend() {
+    setError(null);
+    startTransition(async () => {
+      const result = await resendReportAction(report.id);
+      if (result.success) {
+        setState("sent");
+        setToast(`Relatório reenviado com sucesso para ${client.email}!`);
+        router.refresh();
+      } else {
+        setState("failed");
+        setError(result.error);
+      }
+    });
   }
 
   function approveWithCopy() {
@@ -107,6 +137,10 @@ export function ReportReview({
               <Badge tone="teal" dot>
                 Enviado
               </Badge>
+            ) : state === "failed" ? (
+              <Badge tone="accent" dot>
+                Falha no envio
+              </Badge>
             ) : (
               <Badge tone="gold" dot>
                 Aguarda aprovação
@@ -127,34 +161,88 @@ export function ReportReview({
           <button
             type="button"
             onClick={() => setBody(report.body)}
-            disabled={!dirty || state === "sent"}
+            disabled={!dirty || isPending}
             className={buttonClass("secondary", "sm")}
           >
             <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
             Descartar edições
           </button>
-          <button
-            type="button"
-            onClick={approve}
-            disabled={state === "sent"}
-            className={buttonClass("primary", "sm")}
-          >
-            {state === "sent" ? (
-              <>
-                <CheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                Enviado
-              </>
-            ) : (
-              <>
-                <Mail className="h-3.5 w-3.5" aria-hidden="true" />
-                Aprovar e enviar
-              </>
-            )}
-          </button>
+          {state === "failed" ? (
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={isPending}
+              className={buttonClass("primary", "sm")}
+            >
+              {isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  A reenviar...
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                  Reenviar relatório
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={approve}
+              disabled={state === "sent" || isPending}
+              className={buttonClass("primary", "sm")}
+            >
+              {isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  A enviar...
+                </>
+              ) : state === "sent" ? (
+                <>
+                  <CheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                  Enviado
+                </>
+              ) : (
+                <>
+                  <Mail className="h-3.5 w-3.5" aria-hidden="true" />
+                  Aprovar e enviar
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
 
-      {toast && state === "sent" && (
+      {state === "failed" && (
+        <div
+          role="alert"
+          className="mt-5 flex items-start gap-3 rounded-xl border border-accent/30 bg-accent-soft/70 px-4 py-3 text-[13px] text-ink"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
+          <div className="flex-1">
+            <p className="font-semibold text-accent-hover">Falha no envio do relatório</p>
+            <p className="mt-0.5 text-[12px] text-muted">
+              {error || "Ocorreu um erro no serviço de envio de e-mails. Podes reenviar manualmente clicando no botão ao lado."}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={isPending}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[11.5px] font-medium text-white hover:bg-accent-hover transition-colors shrink-0"
+          >
+            {isPending ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <RotateCcw className="h-3 w-3" />
+            )}
+            Reenviar agora
+          </button>
+        </div>
+      )}
+
+      {toast && (
         <div
           role="status"
           className="mt-5 flex items-start gap-3 rounded-xl border border-teal/25 bg-teal-soft/70 px-4 py-3 text-[13px] text-teal"

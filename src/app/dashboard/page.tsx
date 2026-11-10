@@ -7,11 +7,14 @@ import {
   CheckCircle2,
   Mail,
   Eye,
+  Sparkles,
+  AlertTriangle,
 } from "lucide-react";
 import { getClients, getDashboardSummary, getReports, getSprintCards, getSprintMetrics } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { PlannedVsCompletedChart } from "@/components/dashboard/charts";
+import { ResendButton } from "@/components/dashboard/resend-button";
 import { cn, formatDateTime } from "@/lib/utils";
 
 export const metadata = { title: "Visão geral" };
@@ -21,6 +24,7 @@ const statusBadge = {
   draft: { tone: "muted" as const, label: "Rascunho" },
   sent: { tone: "teal" as const, label: "Enviado" },
   scheduled: { tone: "neutral" as const, label: "Agendado" },
+  failed: { tone: "accent" as const, label: "Falha no envio" },
 };
 
 const columnMeta = {
@@ -40,6 +44,7 @@ export default async function DashboardPage() {
 
   const pending = reports.filter((r) => r.status === "pending_approval" || r.status === "draft");
   const sent = reports.filter((r) => r.status === "sent");
+  const failed = reports.filter((r) => r.status === "failed");
   const clientById = Object.fromEntries(clients.map((c) => [c.id, c]));
 
   return (
@@ -54,18 +59,121 @@ export default async function DashboardPage() {
           </h1>
           <p className="mt-1 text-[14px] text-muted">
             {pending.length} relatórios por aprovar · {clients.filter((c) => c.status === "active").length} clientes ativos
+            {failed.length > 0 && (
+              <span className="text-accent font-medium"> · {failed.length} com falha</span>
+            )}
           </p>
         </div>
         <div className="flex gap-2">
           <ButtonLink href="/onboarding" variant="secondary" size="sm">
             Assistente
           </ButtonLink>
-          <ButtonLink href="/dashboard/reports/rpt-atelier-w42" size="sm">
-            Rever rascunho
-            <ArrowRight className="h-3.5 w-3.5" />
-          </ButtonLink>
+          {pending[0] && (
+            <ButtonLink href={`/dashboard/reports/${pending[0].id}`} size="sm">
+              Rever rascunho
+              <ArrowRight className="h-3.5 w-3.5" />
+            </ButtonLink>
+          )}
         </div>
       </div>
+
+      {/* Alerta de rascunhos para rever */}
+      {pending.length > 0 && (
+        <div
+          role="region"
+          aria-label="Alerta de rascunhos por rever"
+          className="mt-6 flex flex-col gap-4 rounded-2xl border border-gold/40 bg-gradient-to-r from-gold-soft/80 via-gold-soft/30 to-surface p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex items-start gap-3.5">
+            <div className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gold/20 text-[#8a5c00]">
+              <Sparkles className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-[14.5px] font-semibold text-ink">
+                  {pending.length === 1
+                    ? "1 rascunho de relatório pronto para revisão"
+                    : `${pending.length} rascunhos de relatório prontos para revisão`}
+                </h2>
+                <Badge tone="gold" dot>Ação necessária</Badge>
+              </div>
+              <p className="mt-1 text-[13px] text-muted">
+                A IA compilou as tarefas do GitHub Projects. Revê o resumo executivo antes do envio para {clientById[pending[0].clientId]?.name || "o cliente"}.
+              </p>
+            </div>
+          </div>
+          <div className="shrink-0 self-start sm:self-center">
+            <ButtonLink href={`/dashboard/reports/${pending[0].id}`} variant="primary" size="sm">
+              Rever rascunho agora
+              <ArrowRight className="h-3.5 w-3.5" />
+            </ButtonLink>
+          </div>
+        </div>
+      )}
+
+      {/* Alerta de relatórios com falha no envio */}
+      {failed.length > 0 && (
+        <div
+          role="alert"
+          aria-label="Alerta de relatórios com falha"
+          className="mt-4 rounded-2xl border border-accent/30 bg-accent-soft/40 p-5 shadow-sm"
+        >
+          <div className="flex items-start gap-3.5">
+            <div className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent/20 text-accent">
+              <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-[14.5px] font-semibold text-ink">
+                  {failed.length === 1
+                    ? "1 relatório com falha no envio"
+                    : `${failed.length} relatórios com falha no envio`}
+                </h2>
+                <Badge tone="accent" dot>Falha de envio</Badge>
+              </div>
+              <p className="mt-1 text-[13px] text-muted">
+                Ocorreu um erro no envio. Podes consultar os detalhes e reenviar manualmente.
+              </p>
+
+              <div className="mt-3.5 space-y-2.5">
+                {failed.map((r) => {
+                  const client = clientById[r.clientId];
+                  return (
+                    <div
+                      key={r.id}
+                      className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-3.5 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[13px] font-semibold text-ink">
+                            {client?.name}
+                          </span>
+                          <span className="text-[11.5px] text-muted-soft">
+                            · {r.weekLabel}
+                          </span>
+                          <Badge tone="accent" dot>Falhado</Badge>
+                        </div>
+                        <p className="mt-1 text-[12px] text-accent-hover font-mono bg-accent-soft/50 rounded px-2 py-1 inline-block max-w-full truncate">
+                          {r.errorMessage || "Falha na entrega de e-mail (Resend API)"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                        <Link
+                          href={`/dashboard/reports/${r.id}`}
+                          className="text-[12px] font-medium text-muted hover:text-ink px-2 py-1"
+                        >
+                          Ver detalhes
+                        </Link>
+                        <ResendButton reportId={r.id} size="sm" label="Reenviar agora" />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* KPI row */}
       <div className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -74,7 +182,7 @@ export default async function DashboardPage() {
           value={String(summary.pending)}
           hint="rascunhos prontos"
           icon={FileText}
-          accent
+          accent={summary.pending > 0}
         />
         <StatCard
           label="Enviados"
@@ -97,44 +205,63 @@ export default async function DashboardPage() {
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[1.45fr_1fr]">
-        {/* Pending reports */}
+        {/* Pending & Failed reports */}
         <section aria-labelledby="pendentes" className="rounded-2xl border border-line bg-surface">
           <div className="flex items-center justify-between border-b border-line px-5 py-4">
             <h2 id="pendentes" className="text-[14.5px] font-semibold text-ink">
               Relatórios pendentes
             </h2>
-            <Badge tone="gold">{pending.length} por aprovar</Badge>
+            <div className="flex items-center gap-2">
+              {failed.length > 0 && <Badge tone="accent">{failed.length} com falha</Badge>}
+              <Badge tone="gold">{pending.length} por aprovar</Badge>
+            </div>
           </div>
           <ul className="divide-y divide-line">
-            {pending.map((r) => {
+            {[...failed, ...pending].map((r) => {
               const client = clientById[r.clientId];
-              const st = statusBadge[r.status];
+              const st = statusBadge[r.status] ?? statusBadge.draft;
+              const isFailed = r.status === "failed";
               return (
-                <li key={r.id}>
-                  <Link
-                    href={`/dashboard/reports/${r.id}`}
-                    className="group flex items-start gap-4 px-5 py-4 transition-colors hover:bg-paper/70"
-                  >
-                    <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-sand text-[11px] font-semibold text-ink-soft">
-                      {client?.avatarInitials}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-[13.5px] font-medium text-ink">
-                          {client?.name}
+                <li key={r.id} className={cn(isFailed && "bg-accent-soft/20")}>
+                  <div className="flex items-start justify-between gap-4 px-5 py-4">
+                    <Link
+                      href={`/dashboard/reports/${r.id}`}
+                      className="group flex flex-1 items-start gap-4 min-w-0 transition-colors hover:bg-paper/70 rounded-lg p-1 -m-1"
+                    >
+                      <span className={cn(
+                        "mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full text-[11px] font-semibold",
+                        isFailed ? "bg-accent-soft text-accent" : "bg-sand text-ink-soft"
+                      )}>
+                        {client?.avatarInitials}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-[13.5px] font-medium text-ink">
+                            {client?.name}
+                          </p>
+                          <Badge tone={st.tone} dot>
+                            {st.label}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 truncate text-[12.5px] text-muted">{r.subject}</p>
+                        {isFailed && r.errorMessage && (
+                          <p className="mt-1 text-[11.5px] font-mono text-accent-hover truncate">
+                            Erro: {r.errorMessage}
+                          </p>
+                        )}
+                        <p className="mt-1.5 text-[11px] text-muted-soft">
+                          {r.weekLabel} · {r.tasksCompleted}/{r.tasksPlanned} tarefas · gerado{" "}
+                          {formatDateTime(r.generatedAt)}
                         </p>
-                        <Badge tone={st.tone} dot>
-                          {st.label}
-                        </Badge>
                       </div>
-                      <p className="mt-1 truncate text-[12.5px] text-muted">{r.subject}</p>
-                      <p className="mt-1.5 text-[11px] text-muted-soft">
-                        {r.weekLabel} · {r.tasksCompleted}/{r.tasksPlanned} tarefas · gerado{" "}
-                        {formatDateTime(r.generatedAt)}
-                      </p>
-                    </div>
-                    <ArrowUpRight className="mt-1 h-4 w-4 shrink-0 text-line-strong transition-colors group-hover:text-accent" />
-                  </Link>
+                      <ArrowUpRight className="mt-1 h-4 w-4 shrink-0 text-line-strong transition-colors group-hover:text-accent" />
+                    </Link>
+                    {isFailed && (
+                      <div className="shrink-0 self-center pl-2">
+                        <ResendButton reportId={r.id} size="sm" />
+                      </div>
+                    )}
+                  </div>
                 </li>
               );
             })}

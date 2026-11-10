@@ -117,6 +117,8 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
                         ? "teal"
                         : r.status === "pending_approval"
                         ? "gold"
+                        : r.status === "failed"
+                        ? "accent"
                         : "neutral"
                     }
                     dot
@@ -125,6 +127,8 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
                       ? "Enviado"
                       : r.status === "pending_approval"
                       ? "Por aprovar"
+                      : r.status === "failed"
+                      ? "Falha no envio"
                       : "Rascunho"}
                   </Badge>
                   <Link

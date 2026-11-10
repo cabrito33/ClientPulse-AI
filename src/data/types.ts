@@ -5,7 +5,7 @@
  * profiles, clients, reports, sprint_metrics, portal_tokens.
  */
 
-export type ReportStatus = "draft" | "pending_approval" | "sent" | "scheduled";
+export type ReportStatus = "draft" | "pending_approval" | "sent" | "scheduled" | "failed";
 
 export type ClientLanguage = "pt" | "en";
 export type ClientTone = "formal" | "executivo" | "descontraido";
@@ -53,6 +53,7 @@ export interface Report {
   sentAt: string | null;
   openedAt: string | null;
   authorNote?: string;
+  errorMessage?: string | null;
 }
 
 export interface SprintMetric {
@@ -68,6 +69,7 @@ export interface DashboardSummary {
   activeClients: number;
   avgCompletionRate: number;
   timeSavedHours: number;
+  failed?: number;
 }
 
 export interface OnboardingStep {

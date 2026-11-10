@@ -273,39 +273,171 @@ USING (
 
 ---
 
-## 4. How to Test Row Level Security (RLS) Isolation
+## 4. Tabelas Adicionais (Migration 003)
 
-To prove that Row Level Security works properly and User B cannot access User A's data, run this test script in the Supabase SQL Editor:
+### 4.1 `profiles`
+Perfil do utilizador ligado 1:1 ao `auth.users` e à agência criada no signup.
+
+| Coluna | Tipo | Restrições | Descrição |
+| :--- | :--- | :--- | :--- |
+| `id` | `UUID` | `PRIMARY KEY REFERENCES auth.users(id)` | Mesmo UUID do utilizador Supabase Auth. |
+| `agency_id` | `UUID` | `REFERENCES agencies(id) ON DELETE SET NULL` | Agência do utilizador. |
+| `full_name` | `TEXT` | `NULL` | Nome completo. |
+| `email` | `TEXT` | `NULL` | E-mail (espelho de auth.users). |
+| `avatar_url` | `TEXT` | `NULL` | URL de avatar (OAuth). |
+| `role` | `TEXT` | `DEFAULT 'owner'` | Papel na agência (owner, admin, etc.). |
+
+**RLS:** SELECT e UPDATE apenas para o próprio utilizador (`id = auth.uid()`).
+
+---
+
+### 4.2 `sprint_metrics`
+Métricas de velocidade de sprint por cliente. Usadas no dashboard e no portal do cliente.
+
+| Coluna | Tipo | Restrições | Descrição |
+| :--- | :--- | :--- | :--- |
+| `id` | `UUID` | `PRIMARY KEY` | Identificador único. |
+| `client_id` | `UUID` | `NOT NULL REFERENCES clients(id)` | Cliente associado. |
+| `agency_id` | `UUID` | `NOT NULL REFERENCES agencies(id)` | Agência proprietária. |
+| `sprint` | `TEXT` | `NOT NULL` | Código do sprint (ex: `S42`). |
+| `label` | `TEXT` | `NOT NULL` | Etiqueta legível (ex: `Semana 42`). |
+| `completed` | `INT` | `DEFAULT 0` | Tarefas concluídas. |
+| `planned` | `INT` | `DEFAULT 0` | Tarefas planeadas. |
+
+**RLS:** CRUD completo para a agência proprietária (`agency_id`). Leitura anónima via portal token.
+
+---
+
+### 4.3 `portal_tokens`
+Tabela dedicada à gestão de tokens de portal com suporte a revogação e expiração.
+
+| Coluna | Tipo | Restrições | Descrição |
+| :--- | :--- | :--- | :--- |
+| `id` | `UUID` | `PRIMARY KEY` | Identificador único. |
+| `client_id` | `UUID` | `NOT NULL REFERENCES clients(id)` | Cliente a que pertence. |
+| `agency_id` | `UUID` | `NOT NULL REFERENCES agencies(id)` | Agência proprietária. |
+| `token` | `UUID` | `NOT NULL UNIQUE` | Token de acesso gerado aleatoriamente. |
+| `is_active` | `BOOLEAN` | `DEFAULT true` | `false` após revogação manual. |
+| `expires_at` | `TIMESTAMPTZ` | `NULL` | `NULL` = perpétuo; data = expiração. |
+| `revoked_at` | `TIMESTAMPTZ` | `NULL` | Quando foi revogado manualmente. |
+
+**RLS:** CRUD completo para a agência proprietária. `anon` não tem acesso directo.
+
+---
+
+### 4.4 `delivery_logs`
+Registo de auditoria de cada envio de e-mail transaccional (Resend API).
+
+| Coluna | Tipo | Restrições | Descrição |
+| :--- | :--- | :--- | :--- |
+| `id` | `UUID` | `PRIMARY KEY` | Identificador único. |
+| `report_id` | `UUID` | `REFERENCES reports(id) ON DELETE SET NULL` | Relatório enviado. |
+| `client_id` | `UUID` | `NOT NULL REFERENCES clients(id)` | Destinatário. |
+| `agency_id` | `UUID` | `NOT NULL REFERENCES agencies(id)` | Agência remetente. |
+| `status` | `TEXT` | `CHECK (status IN ('sent','delivered','bounced','failed'))` | Estado da entrega. |
+| `email_service` | `TEXT` | `DEFAULT 'resend'` | Serviço de e-mail usado. |
+| `recipient_email`| `TEXT` | `NOT NULL` | Endereço de destino. |
+| `message_id` | `TEXT` | `NULL` | ID externo do Resend. |
+| `error_message` | `TEXT` | `NULL` | Detalhe do erro, se falhou. |
+| `sent_at` | `TIMESTAMPTZ` | `DEFAULT now()` | Timestamp de envio. |
+
+**RLS:** SELECT e INSERT para a agência proprietária. UPDATE reservado ao `service_role` (Edge Functions).
+
+---
+
+## 5. Row Level Security — Referência Completa (BE-02)
+
+### 5.1 Visão Geral
+
+| Tabela | RLS Activo | Políticas Authenticated | Acesso Anónimo (Portal) |
+| :--- | :---: | :--- | :---: |
+| `agencies` | ✅ | SELECT, INSERT, UPDATE (próprio `user_id`) | ❌ |
+| `github_integrations` | ✅ | SELECT, ALL (via `agency_id`) | ❌ |
+| `clients` | ✅ | SELECT, INSERT, UPDATE, DELETE (via `agency_id`) | SELECT via portal token |
+| `reports` | ✅ | SELECT, INSERT, UPDATE, DELETE (via `agency_id`) | SELECT via portal token |
+| `report_tasks` | ✅ | ALL (via `report.agency_id`, com WITH CHECK) | SELECT via portal token |
+| `profiles` | ✅ | SELECT, INSERT, UPDATE (próprio `id`) | ❌ |
+| `sprint_metrics` | ✅ | SELECT, ALL (via `agency_id`) | SELECT via portal token |
+| `portal_tokens` | ✅ | ALL (via `agency_id`) | ❌ |
+| `delivery_logs` | ✅ | SELECT, INSERT (via `agency_id`) + UPDATE via `service_role` | ❌ |
+
+### 5.2 Função Auxiliar `get_my_agency_id()`
 
 ```sql
--- Step 1: Create two fake users in Supabase Auth (or simulate them)
--- Replace with actual UUIDs from your auth.users table during testing
-DO $$
-DECLARE
-  user_a UUID := '11111111-1111-1111-1111-111111111111';
-  user_b UUID := '22222222-2222-2222-2222-222222222222';
-  agency_a UUID;
-  client_a UUID;
-BEGIN
-  -- Insert agency for User A
-  INSERT INTO agencies (user_id, name) VALUES (user_a, 'Agency A')
-  RETURNING id INTO agency_a;
-
-  -- Insert client for Agency A
-  INSERT INTO clients (agency_id, name, email, github_project_id, github_project_owner)
-  VALUES (agency_a, 'Acme Corp', 'acme@example.com', 'PVT_123', 'acme-org')
-  RETURNING id INTO client_a;
-
-  -- Step 2: Simulate logging in as User B
-  SET LOCAL ROLE authenticated;
-  PERFORM set_config('request.jwt.claim.sub', user_b::text, true);
-
-  -- Step 3: Attempt to read User A's clients
-  -- This query MUST return 0 rows!
-  IF EXISTS (SELECT 1 FROM clients WHERE id = client_a) THEN
-    RAISE EXCEPTION 'RLS FAILED: User B was able to read User A clients!';
-  ELSE
-    RAISE NOTICE 'RLS SUCCESS: User B cannot see User A data.';
-  END IF;
-END $$;
+CREATE OR REPLACE FUNCTION public.get_my_agency_id()
+RETURNS UUID
+LANGUAGE SQL SECURITY DEFINER STABLE
+SET search_path = public
+AS $$
+  SELECT id FROM public.agencies WHERE user_id = auth.uid();
+$$;
 ```
+
+**Propósito:** Evita subqueries repetidas por linha em cada avaliação de política RLS.
+**`SECURITY DEFINER`:** Executa com privilégios do owner, não do chamador — permite acesso seguro à tabela `agencies`.
+**`STABLE`:** O resultado é constante dentro de uma transacção — o query planner pode fazer cache.
+
+### 5.3 Padrão de Isolamento por Agência
+
+Todas as tabelas com `agency_id` usam este padrão:
+
+```sql
+-- Para USING (leitura):
+agency_id = public.get_my_agency_id()
+
+-- Para WITH CHECK (escrita):
+agency_id = public.get_my_agency_id()
+```
+
+### 5.4 Acesso ao Portal do Cliente (Anónimo)
+
+O portal do cliente acede a dados **sem login Supabase**. A arquitectura de segurança é:
+
+```
+Browser (anon) → Edge Function client-portal-data
+                  ↓ valida portal_token na BD
+                  ↓ usa service_role (bypass RLS)
+                  → retorna apenas dados do cliente
+```
+
+As políticas `anon` nas tabelas `clients`, `reports`, `sprint_metrics` e `report_tasks` são uma **segunda linha de defesa** caso a `anon key` seja exposta directamente ao browser. Usam a tabela `portal_tokens` para validar:
+- Token activo (`is_active = true`)
+- Token não expirado (`expires_at IS NULL OR expires_at > now()`)
+
+### 5.5 Como Testar o Isolamento RLS
+
+Executar o script completo de testes no Supabase SQL Editor:
+
+**Ficheiro:** [`supabase/tests/rls_isolation_test.sql`](../supabase/tests/rls_isolation_test.sql)
+
+```sql
+-- Verificação rápida das políticas activas:
+SELECT tablename, policyname, roles, cmd
+FROM pg_policies
+WHERE schemaname = 'public'
+ORDER BY tablename, cmd;
+
+-- Verificação do RLS estar activo em todas as tabelas:
+SELECT relname AS table_name, relrowsecurity AS rls_enabled
+FROM pg_class
+JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+WHERE pg_namespace.nspname = 'public' AND relkind = 'r'
+ORDER BY relname;
+```
+
+**Testes cobertos pelo script:**
+1. ✅ Utilizador A vê os seus próprios clientes
+2. ✅ Utilizador B NÃO vê clientes da Agência A
+3. ✅ Utilizador B NÃO vê relatórios da Agência A
+4. ✅ Utilizador B NÃO vê o registo `agencies` da Agência A
+5. ✅ Utilizador B NÃO consegue fazer UPDATE em dados da Agência A
+6. ✅ Utilizador A vê os seus próprios relatórios
+7. ✅ `get_my_agency_id()` retorna o `agency_id` correcto
+
+### 5.6 Ficheiros de Migração
+
+| Ficheiro | Tabelas Cobertas |
+| :--- | :--- |
+| `supabase/migrations/001_initial_schema.sql` | `agencies`, `github_integrations`, `clients`, `reports`, `report_tasks` |
+| `supabase/migrations/003_be_01_complete_schema.sql` | `profiles`, `sprint_metrics`, `portal_tokens`, `delivery_logs` |
+| `supabase/migrations/004_be_02_rls_policies.sql` | Completude: `get_my_agency_id()`, INSERT em `agencies`/`profiles`, portal anon, correcções |

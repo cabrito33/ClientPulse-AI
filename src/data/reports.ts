@@ -247,6 +247,28 @@ export const reports: Report[] = [
     sentAt: null,
     openedAt: null,
   },
+  {
+    id: "rpt-vitalis-w40",
+    clientId: "clinica-vitalis",
+    weekLabel: "Semana 40 · 28 set–2 out",
+    periodStart: "2026-09-28",
+    periodEnd: "2026-10-02",
+    status: "failed",
+    subject: "Clínica Vitalis — progresso da semana 40",
+    intro:
+      "Boa tarde, Dr. Ricardo. Segue o resumo dos desenvolvimentos da semana 40.",
+    sections: vitalisPrev,
+    body: bodyFrom(
+      "Boa tarde, Dr. Ricardo. Segue o resumo dos desenvolvimentos da semana 40.",
+      vitalisPrev,
+    ),
+    tasksCompleted: 7,
+    tasksPlanned: 9,
+    generatedAt: "2026-10-02T09:00:00+01:00",
+    sentAt: null,
+    openedAt: null,
+    errorMessage: "Falha na entrega de e-mail (Resend API): 422 Invalid recipient address.",
+  },
 ];
 
 export const reportsById = Object.fromEntries(reports.map((r) => [r.id, r])) as Record<
