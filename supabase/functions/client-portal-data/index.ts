@@ -20,17 +20,17 @@
 // - Strictly read-only: Never permits mutations from this endpoint.
 // ==============================================================================
 
-import { corsHeaders, handleCors } from '../_shared/cors.ts';
+import { publicCorsHeaders, handleCors } from '../_shared/cors.ts';
 import { createAdminClient } from '../_shared/supabaseClient.ts';
 
 Deno.serve(async (req: Request) => {
-  const corsResponse = handleCors(req);
+  const corsResponse = handleCors(req, true);
   if (corsResponse) return corsResponse;
 
   if (req.method !== 'GET') {
     return new Response(JSON.stringify({ error: 'Method not allowed. Use GET.' }), {
       status: 405,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...publicCorsHeaders, 'Content-Type': 'application/json' },
     });
   }
 
@@ -42,7 +42,7 @@ Deno.serve(async (req: Request) => {
     if (!token) {
       return new Response(JSON.stringify({ error: "Missing required 'token' query parameter." }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...publicCorsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
@@ -51,7 +51,7 @@ Deno.serve(async (req: Request) => {
     if (!uuidRegex.test(token)) {
       return new Response(JSON.stringify({ error: 'Invalid portal token format.' }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...publicCorsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
@@ -67,7 +67,7 @@ Deno.serve(async (req: Request) => {
     if (clientError || !client) {
       return new Response(
         JSON.stringify({ error: 'Client portal not found. The link may be invalid or revoked.' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 404, headers: { ...publicCorsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -128,13 +128,13 @@ Deno.serve(async (req: Request) => {
           sprint_velocity: sprintVelocity,
         },
       }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 200, headers: { ...publicCorsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal Server Error';
     return new Response(JSON.stringify({ error: message }), {
       status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...publicCorsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });

@@ -207,6 +207,56 @@ sequenceDiagram
   2. In rotation script, read current `pat_token_encrypted` rows, decrypt with current `PAT_ENCRYPTION_KEY`, re-encrypt with new key, and update rows.
   3. Update secret in Supabase: `npx supabase secrets set PAT_ENCRYPTION_KEY="<new_key>"`.
 
+### 5.6 Produção: Configuração Segura do Agendamento (pg_cron, pg_net e Supabase Vault)
+Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.sql`), o agendamento em produção utiliza o **Supabase Vault** em conjunto com a extensão `pg_net` e `pg_cron`:
+
+1. **Gerar o segredo partilhado:**
+   ```bash
+   openssl rand -hex 32
+   ```
+
+2. **Configurar nos Secrets das Edge Functions:**
+   ```bash
+   npx supabase secrets set SCHEDULED_FUNCTION_SECRET="<seu_segredo_gerado>"
+   ```
+
+3. **Guardar o segredo no Supabase Vault (PostgreSQL):**
+   No SQL Editor do painel Supabase (ou via psql com permissão de administrador):
+   ```sql
+   SELECT vault.create_secret('<seu_segredo_gerado>', 'scheduled_function_secret');
+   ```
+
+4. **Ativar o agendamento cron horário em Produção:**
+   ```sql
+   CREATE EXTENSION IF NOT EXISTS "pg_cron";
+   CREATE EXTENSION IF NOT EXISTS "pg_net";
+
+   -- Remove agendamento anterior se existir
+   SELECT cron.unschedule('dispatch-reports-hourly')
+   WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'dispatch-reports-hourly');
+
+   -- Regista o job horário seguro que lê o segredo do Vault
+   SELECT cron.schedule(
+       'dispatch-reports-hourly',
+       '0 * * * *',
+       $$
+       SELECT net.http_post(
+           url := 'https://rewurbzemhydcqhmornx.supabase.co/functions/v1/dispatch-scheduled-reports',
+           headers := jsonb_build_object(
+               'Content-Type', 'application/json',
+               'X-Scheduled-Secret', (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'scheduled_function_secret' LIMIT 1)
+           ),
+           body := '{}'::jsonb
+       );
+       $$
+   );
+   ```
+
+5. **Garantias de Segurança:**
+   - Nenhum segredo real é guardado em repositório ou migrações versionadas.
+   - O `pg_net` obtém o segredo desencriptado em tempo de execução via `vault.decrypted_secrets`.
+   - A Edge Function `dispatch-scheduled-reports` valida `req.headers.get('X-Scheduled-Secret') === Deno.env.get('SCHEDULED_FUNCTION_SECRET')` antes de processar qualquer cliente.
+
 ---
 
 ## 6. Technical Risks & Mitigation Strategies
