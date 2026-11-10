@@ -133,18 +133,41 @@ Deno.serve(async (req: Request) => {
           7
         );
 
-        // Generate report via Gemini
-        const reportBlocks = await generateExecutiveReport(geminiApiKey, {
-          clientName: client.name,
-          companyName: client.company_name,
-          language: (client.language as 'pt' | 'en') ?? 'pt',
-          tone: (client.communication_tone as 'formal' | 'executive' | 'casual') ?? 'executive',
-          tasks: {
-            done: tasks.done,
-            inProgress: tasks.inProgress,
-            blocked: tasks.blocked,
-          },
-        });
+        // Generate report via Gemini (with graceful fallback)
+        let reportBlocks: { done: string; blockers: string; next_steps: string };
+        let generatedWithoutAi = false;
+        let aiErrorMessage: string | null = null;
+
+        try {
+          if (!geminiApiKey) throw new Error('GEMINI_API_KEY is not configured');
+          reportBlocks = await generateExecutiveReport(geminiApiKey, {
+            clientName: client.name,
+            companyName: client.company_name,
+            language: (client.language as 'pt' | 'en') ?? 'pt',
+            tone: (client.communication_tone as 'formal' | 'executive' | 'casual') ?? 'executive',
+            tasks: {
+              done: tasks.done,
+              inProgress: tasks.inProgress,
+              blocked: tasks.blocked,
+            },
+          });
+        } catch (aiErr: unknown) {
+          generatedWithoutAi = true;
+          aiErrorMessage = aiErr instanceof Error ? aiErr.message : String(aiErr);
+          console.warn(`[dispatch-scheduled-reports] Gemini unavailable for client ${client.id}, falling back:`, aiErrorMessage);
+
+          reportBlocks = {
+            done: tasks.done.length > 0
+              ? tasks.done.map((t) => `• ${t.title}${t.assignee ? ` (${t.assignee})` : ''}`).join('\n')
+              : '• Nenhuma tarefa concluída no período selecionado.',
+            blockers: tasks.blocked.length > 0
+              ? tasks.blocked.map((t) => `• ${t.title}${t.assignee ? ` (${t.assignee})` : ''}`).join('\n')
+              : '• Nenhum impedimento ativo esta semana. Todas as atividades seguem o planeamento previsto.',
+            next_steps: tasks.inProgress.length > 0
+              ? tasks.inProgress.map((t) => `• ${t.title}${t.assignee ? ` (${t.assignee})` : ''}`).join('\n')
+              : '• Planeamento e definição das próximas atividades em curso.',
+          };
+        }
 
         // Period dates
         const periodEnd = new Date();
@@ -154,8 +177,8 @@ Deno.serve(async (req: Request) => {
         const periodStartStr = periodStart.toISOString().split('T')[0];
         const periodEndStr = periodEnd.toISOString().split('T')[0];
 
-        // Determine initial status: 'sent' if bypass is enabled, else 'draft'
-        const isBypass = client.auto_send_enabled === true;
+        // Determine initial status: 'sent' ONLY if bypass is enabled AND successfully synthesized with AI
+        const isBypass = client.auto_send_enabled === true && !generatedWithoutAi;
         const initialStatus = isBypass ? 'sent' : 'draft';
 
         let emailDeliveryId = null;
@@ -182,6 +205,14 @@ Deno.serve(async (req: Request) => {
         }
 
         // Insert report
+        const rawReportData = {
+          tasks: tasks.all,
+          tasks_completed: tasks.done.length,
+          tasks_planned: tasks.all.length,
+          generated_without_ai: generatedWithoutAi,
+          ai_error: aiErrorMessage,
+        };
+
         const { data: newReport, error: insertError } = await supabase
           .from('reports')
           .insert({
@@ -193,7 +224,7 @@ Deno.serve(async (req: Request) => {
             summary_done: reportBlocks.done,
             summary_blockers: reportBlocks.blockers,
             summary_next_steps: reportBlocks.next_steps,
-            raw_github_data: tasks.all,
+            raw_github_data: rawReportData,
             approved_at: sentAtTimestamp,
             sent_at: sentAtTimestamp,
             email_delivery_id: emailDeliveryId,

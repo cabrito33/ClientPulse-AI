@@ -168,12 +168,22 @@ function mapReport(row: ReportRow, customErrorMessage?: string | null): Report {
   };
 
   const status = statusMap[row.status] ?? "draft";
+  const rawObj =
+    row.raw_github_data &&
+    typeof row.raw_github_data === "object" &&
+    !Array.isArray(row.raw_github_data)
+      ? (row.raw_github_data as Record<string, unknown>)
+      : null;
+  const generatedWithoutAi = Boolean(rawObj?.generated_without_ai);
+
   const errorMessage =
     customErrorMessage !== undefined
       ? customErrorMessage
       : status === "failed"
         ? extractErrorMessage(row)
-        : null;
+        : generatedWithoutAi && rawObj?.ai_error
+          ? String(rawObj.ai_error)
+          : null;
 
   return {
     id: row.id,
@@ -192,6 +202,7 @@ function mapReport(row: ReportRow, customErrorMessage?: string | null): Report {
     sentAt: row.sent_at ?? null,
     openedAt: null, // delivery tracking not yet in schema
     errorMessage,
+    generatedWithoutAi,
   };
 }
 
@@ -296,17 +307,32 @@ function extractTaskCounts(raw: unknown): {
   tasksCompleted: number;
   tasksPlanned: number;
 } {
-  if (
-    raw &&
-    typeof raw === "object" &&
-    !Array.isArray(raw) &&
-    "tasks_completed" in raw &&
-    "tasks_planned" in raw
-  ) {
-    return {
-      tasksCompleted: Number((raw as Record<string, unknown>).tasks_completed) || 0,
-      tasksPlanned: Number((raw as Record<string, unknown>).tasks_planned) || 0,
-    };
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>;
+    if ("tasks_completed" in obj && "tasks_planned" in obj) {
+      return {
+        tasksCompleted: Number(obj.tasks_completed) || 0,
+        tasksPlanned: Number(obj.tasks_planned) || 0,
+      };
+    }
+    if (Array.isArray(obj.tasks)) {
+      const completed = (obj.tasks as Record<string, unknown>[]).filter(
+        (t) =>
+          t?.statusCategory === "done" ||
+          t?.state === "CLOSED" ||
+          t?.status === "Done"
+      ).length;
+      return { tasksCompleted: completed, tasksPlanned: obj.tasks.length };
+    }
+  }
+  if (Array.isArray(raw)) {
+    const completed = (raw as Record<string, unknown>[]).filter(
+      (t) =>
+        t?.statusCategory === "done" ||
+        t?.state === "CLOSED" ||
+        t?.status === "Done"
+    ).length;
+    return { tasksCompleted: completed, tasksPlanned: raw.length };
   }
   return { tasksCompleted: 0, tasksPlanned: 0 };
 }

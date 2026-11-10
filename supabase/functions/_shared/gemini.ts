@@ -65,12 +65,46 @@ LANGUAGE & TONE:
 STRICT ANTI-HALLUCINATION RULES (CRITICAL):
 1. ONLY describe work supported directly by the provided task titles, labels, or statuses.
 2. NEVER invent features, completed milestones, metrics, or team members that are not in the input data.
-3. Translate technical developer jargon (e.g. "fix NPE in authController.ts", "refactor db index") into clear business value (e.g. "Improved login security and reliability", "Optimized database performance").
+3. Translate technical developer jargon (e.g. "fix NPE in authController.ts", "refactor db index") into clear business value (e.g. "Melhoria na estabilidade da autenticação e proteção de sessão", "Otimização da performance da base de dados").
 4. If there are NO blocked tasks in the input, explicitly state:
    - PT: "Nenhum impedimento ativo esta semana. Todas as atividades seguem o planeamento previsto."
    - EN: "No active blockers this week. All deliverables are progressing as planned."
 5. If there are NO completed tasks in the input, state that the team focused on in-progress deliverables and specify what is currently underway.
 6. Format each block with clear bullet points (using '• ') separated by newlines.
+
+EXEMPLOS DE ENTRADA E SAÍDA ESPERADA EM PORTUGUÊS DE PORTUGAL (FEW-SHOT):
+
+--- EXEMPLO 1 (Com tarefas concluídas e impedimento real) ---
+Entrada de Tarefas:
+- Tarefas Concluídas:
+  • "feat: Stripe webhook handler for subscription renewal" (Assignee: Tiago)
+  • "fix(auth): session expiration bug on mobile Safari" (Assignee: Sara)
+- Tarefas Em Curso:
+  • "perf: optimize client dashboard SQL queries" (Assignee: Tiago)
+- Tarefas Bloqueadas:
+  • "setup staging environment: waiting for AWS credentials from client" (Assignee: Miguel)
+
+Saída JSON esperada:
+{
+  "done": "• Conclusão da integração de pagamentos e renovação automática de subscrições com tratamento seguro via Stripe.\\n• Resolução do problema de expiração de sessão em dispositivos móveis, assegurando uma navegação estável e sem interrupções.",
+  "blockers": "• A configuração do ambiente de testes (staging) aguarda a disponibilização das credenciais da infraestrutura AWS por parte da equipa do cliente.",
+  "next_steps": "• Finalização da otimização das consultas à base de dados para acelerar o carregamento dos indicadores no dashboard executivo."
+}
+
+--- EXEMPLO 2 (Sem tarefas bloqueadas — aplicação estrita da regra de impedimentos) ---
+Entrada de Tarefas:
+- Tarefas Concluídas:
+  • "feat: export executive reports to PDF and Excel format" (Assignee: Beatriz)
+- Tarefas Em Curso:
+  • "refactor: email notification templates and retry queue" (Assignee: Diogo)
+- Tarefas Bloqueadas: nenhumas
+
+Saída JSON esperada:
+{
+  "done": "• Disponibilização da funcionalidade de exportação de relatórios executivos em formatos PDF e Excel para partilha com as equipas de gestão.",
+  "blockers": "• Nenhum impedimento ativo esta semana. Todas as atividades seguem o planeamento previsto.",
+  "next_steps": "• Conclusão da modernização dos modelos de notificação por e-mail e implementação do mecanismo de reenvio automático em caso de falha de rede."
+}
 `;
 }
 

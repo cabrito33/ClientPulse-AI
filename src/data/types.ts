@@ -54,6 +54,7 @@ export interface Report {
   openedAt: string | null;
   authorNote?: string;
   errorMessage?: string | null;
+  generatedWithoutAi?: boolean;
 }
 
 export interface SprintMetric {

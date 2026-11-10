@@ -146,10 +146,18 @@ export function ReportReview({
                 Aguarda aprovação
               </Badge>
             )}
+            {report.generatedWithoutAi && (
+              <Badge tone="accent" dot>
+                Gerado sem IA — rever manualmente
+              </Badge>
+            )}
           </div>
           <p className="mt-1 text-[13.5px] text-muted">
-            {client.name} · {report.weekLabel} · gerado por IA a{" "}
-            {formatDateTime(report.generatedAt)}
+            {client.name} · {report.weekLabel} ·{" "}
+            {report.generatedWithoutAi
+              ? "gerado a partir de tarefas em bruto (sem IA)"
+              : "gerado por IA"}{" "}
+            a {formatDateTime(report.generatedAt)}
           </p>
         </div>
 
@@ -213,6 +221,22 @@ export function ReportReview({
           )}
         </div>
       </div>
+
+      {report.generatedWithoutAi && (
+        <div
+          role="alert"
+          aria-label="Aviso de geração sem IA"
+          className="mt-5 flex items-start gap-3 rounded-xl border border-accent/30 bg-accent-soft/50 px-4 py-3 text-[13px] text-ink"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
+          <div className="flex-1">
+            <p className="font-semibold text-accent-hover">Gerado sem IA — rever manualmente</p>
+            <p className="mt-0.5 text-[12px] text-muted">
+              Não foi possível obter síntese automática através da IA. Os cartões de tarefas do GitHub foram agrupados diretamente em bruto para que possa rever e ajustar os blocos antes do envio.
+            </p>
+          </div>
+        </div>
+      )}
 
       {state === "failed" && (
         <div

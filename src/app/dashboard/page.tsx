@@ -100,9 +100,16 @@ export default async function DashboardPage() {
                     : `${pending.length} rascunhos de relatório prontos para revisão`}
                 </h2>
                 <Badge tone="gold" dot>Ação necessária</Badge>
+                {pending.some((p) => p.generatedWithoutAi) && (
+                  <Badge tone="accent" dot>
+                    Gerado sem IA — rever manualmente
+                  </Badge>
+                )}
               </div>
               <p className="mt-1 text-[13px] text-muted">
-                A IA compilou as tarefas do GitHub Projects. Revê o resumo executivo antes do envio para {clientById[pending[0].clientId]?.name || "o cliente"}.
+                {pending[0]?.generatedWithoutAi
+                  ? "As tarefas do GitHub foram agrupadas em bruto devido a uma indisponibilidade na IA. Revê o rascunho antes do envio."
+                  : `A IA compilou as tarefas do GitHub Projects. Revê o resumo executivo antes do envio para ${clientById[pending[0].clientId]?.name || "o cliente"}.`}
               </p>
             </div>
           </div>
@@ -246,6 +253,11 @@ export default async function DashboardPage() {
                           <Badge tone={st.tone} dot>
                             {st.label}
                           </Badge>
+                          {r.generatedWithoutAi && (
+                            <Badge tone="accent" dot>
+                              Gerado sem IA — rever manualmente
+                            </Badge>
+                          )}
                         </div>
                         <p className="mt-1 truncate text-[12.5px] text-muted">{r.subject}</p>
                         {isFailed && r.errorMessage && (

@@ -111,20 +111,52 @@ Deno.serve(async (req: Request) => {
       days
     );
 
-    // 7. Invoke Gemini AI to Synthesize the 3 Blocks
+    // 7. Invoke Gemini AI to Synthesize the 3 Blocks (with Graceful Fallback)
     const geminiApiKey = Deno.env.get('GEMINI_API_KEY') ?? '';
-    const reportBlocks = await generateExecutiveReport(geminiApiKey, {
-      clientName: client.name,
-      companyName: client.company_name,
-      language: (client.language as 'pt' | 'en') ?? 'pt',
-      tone: (client.communication_tone as 'formal' | 'executive' | 'casual') ?? 'executive',
-      tasks: {
-        done: tasks.done,
-        inProgress: tasks.inProgress,
-        blocked: tasks.blocked,
-      },
-      customNotes: custom_notes,
-    });
+    let reportBlocks: { done: string; blockers: string; next_steps: string };
+    let generatedWithoutAi = false;
+    let aiErrorMessage: string | null = null;
+
+    try {
+      if (!geminiApiKey) {
+        throw new Error('GEMINI_API_KEY is not configured in Supabase environment secrets.');
+      }
+      reportBlocks = await generateExecutiveReport(geminiApiKey, {
+        clientName: client.name,
+        companyName: client.company_name,
+        language: (client.language as 'pt' | 'en') ?? 'pt',
+        tone: (client.communication_tone as 'formal' | 'executive' | 'casual') ?? 'executive',
+        tasks: {
+          done: tasks.done,
+          inProgress: tasks.inProgress,
+          blocked: tasks.blocked,
+        },
+        customNotes: custom_notes,
+      });
+    } catch (aiErr: unknown) {
+      // Graceful fallback: Do NOT return HTTP 500. Group raw task titles into the 3 blocks.
+      generatedWithoutAi = true;
+      aiErrorMessage = aiErr instanceof Error ? aiErr.message : String(aiErr);
+      console.warn(`[generate-report] Gemini synthesis unavailable, falling back to raw tasks:`, aiErrorMessage);
+
+      const doneLines = tasks.done.length > 0
+        ? tasks.done.map((t) => `• ${t.title}${t.assignee ? ` (${t.assignee})` : ''}`).join('\n')
+        : '• Nenhuma tarefa concluída no período selecionado.';
+
+      const blockerLines = tasks.blocked.length > 0
+        ? tasks.blocked.map((t) => `• ${t.title}${t.assignee ? ` (${t.assignee})` : ''}`).join('\n')
+        : '• Nenhum impedimento ativo esta semana. Todas as atividades seguem o planeamento previsto.';
+
+      const nextLines = tasks.inProgress.length > 0
+        ? tasks.inProgress.map((t) => `• ${t.title}${t.assignee ? ` (${t.assignee})` : ''}`).join('\n')
+        : '• Planeamento e definição das próximas atividades em curso.';
+
+      reportBlocks = {
+        done: doneLines,
+        blockers: blockerLines,
+        next_steps: nextLines,
+      };
+    }
 
     // 8. Calculate Period Dates
     const periodEnd = new Date();
@@ -135,6 +167,14 @@ Deno.serve(async (req: Request) => {
     const periodEndStr = periodEnd.toISOString().split('T')[0];
 
     // 9. Save Draft Report into Database
+    const rawData = {
+      tasks: tasks.all,
+      tasks_completed: tasks.done.length,
+      tasks_planned: tasks.all.length,
+      generated_without_ai: generatedWithoutAi,
+      ai_error: aiErrorMessage,
+    };
+
     const { data: report, error: reportInsertError } = await supabase
       .from('reports')
       .insert({
@@ -146,7 +186,7 @@ Deno.serve(async (req: Request) => {
         summary_done: reportBlocks.done,
         summary_blockers: reportBlocks.blockers,
         summary_next_steps: reportBlocks.next_steps,
-        raw_github_data: tasks.all,
+        raw_github_data: rawData,
       })
       .select()
       .single();
@@ -198,6 +238,7 @@ Deno.serve(async (req: Request) => {
         report_id: report.id,
         client_id: client.id,
         status: 'draft',
+        generated_without_ai: generatedWithoutAi,
         period: {
           start: periodStartStr,
           end: periodEndStr,
