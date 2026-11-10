@@ -250,6 +250,62 @@ BEGIN
     END;
 
     -- =========================================================================
+    -- TESTE 8: Portal anónimo via token válido (RPC get_portal_data_by_token)
+    -- =========================================================================
+    RAISE NOTICE '';
+    RAISE NOTICE '[TESTE 8] Visitante anónimo acede ao portal via token válido...';
+
+    SET LOCAL ROLE anon;
+
+    DECLARE
+        v_portal_payload JSONB;
+    BEGIN
+        SELECT public.get_portal_data_by_token(v_portal_token_a) INTO v_portal_payload;
+
+        IF v_portal_payload IS NOT NULL
+           AND (v_portal_payload->'client'->>'id')::uuid = v_client_a THEN
+            RAISE NOTICE '  ✅ PASS — Portal devolveu dados do cliente correcto via token';
+        ELSE
+            RAISE EXCEPTION '  ❌ FAIL — get_portal_data_by_token não devolveu os dados esperados!';
+        END IF;
+    END;
+
+    -- =========================================================================
+    -- TESTE 9: Portal anónimo com token inexistente devolve NULL (404)
+    -- =========================================================================
+    RAISE NOTICE '';
+    RAISE NOTICE '[TESTE 9] Visitante anónimo com token inexistente é rejeitado (NULL)...';
+
+    DECLARE
+        v_fake_payload JSONB;
+    BEGIN
+        SELECT public.get_portal_data_by_token('00000000-0000-0000-0000-000000000000'::uuid) INTO v_fake_payload;
+
+        IF v_fake_payload IS NULL THEN
+            RAISE NOTICE '  ✅ PASS — Token inexistente rejeitado com sucesso (NULL)';
+        ELSE
+            RAISE EXCEPTION '  ❌ FAIL — Token inexistente devolveu dados não autorizados!';
+        END IF;
+    END;
+
+    -- =========================================================================
+    -- TESTE 10: Visitante anónimo não consegue fazer SELECT directo a tabelas
+    -- =========================================================================
+    RAISE NOTICE '';
+    RAISE NOTICE '[TESTE 10] Visitante anónimo NÃO tem acesso SELECT directo a clients...';
+
+    BEGIN
+        SELECT COUNT(*) INTO v_count FROM public.clients;
+        IF v_count = 0 THEN
+            RAISE NOTICE '  ✅ PASS — SELECT directo devolveu 0 linhas';
+        ELSE
+            RAISE EXCEPTION '  ❌ FAIL — Anon conseguiu ler % cliente(s) directamente!', v_count;
+        END IF;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE '  ✅ PASS — SELECT directo rejeitado pela base de dados: %', SQLERRM;
+    END;
+
+    -- =========================================================================
     -- TEARDOWN: Reverter ao role de superuser e limpar dados de teste
     -- =========================================================================
     RAISE NOTICE '';

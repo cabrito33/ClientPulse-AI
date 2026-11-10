@@ -433,11 +433,15 @@ ORDER BY relname;
 5. ✅ Utilizador B NÃO consegue fazer UPDATE em dados da Agência A
 6. ✅ Utilizador A vê os seus próprios relatórios
 7. ✅ `get_my_agency_id()` retorna o `agency_id` correcto
+8. ✅ Visitante anónimo acede ao portal via token válido (`get_portal_data_by_token`)
+9. ✅ Visitante anónimo com token inexistente/inválido é rejeitado (`NULL`)
+10. ✅ Visitante anónimo não consegue fazer `SELECT` direto às tabelas
 
 ### 5.6 Ficheiros de Migração
 
-| Ficheiro | Tabelas Cobertas |
+| Ficheiro | Tabelas / Funcionalidades Cobertas |
 | :--- | :--- |
 | `supabase/migrations/001_initial_schema.sql` | `agencies`, `github_integrations`, `clients`, `reports`, `report_tasks` |
 | `supabase/migrations/003_be_01_complete_schema.sql` | `profiles`, `sprint_metrics`, `portal_tokens`, `delivery_logs` |
-| `supabase/migrations/004_be_02_rls_policies.sql` | Completude: `get_my_agency_id()`, INSERT em `agencies`/`profiles`, portal anon, correcções |
+| `supabase/migrations/004_be_02_rls_policies.sql` | Completude: `get_my_agency_id()`, INSERT em `agencies`/`profiles`, correcções |
+| `supabase/migrations/005_be_02_portal_rpc.sql` | RPC `get_portal_data_by_token` (SECURITY DEFINER) + revogação de SELECT direto para anon |

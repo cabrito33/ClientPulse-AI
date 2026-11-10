@@ -472,7 +472,16 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      get_my_agency_id: {
+        Args: Record<PropertyKey, never>;
+        Returns: string | null;
+      };
+      get_portal_data_by_token: {
+        Args: {
+          p_token: string;
+        };
+        Returns: Json | null;
+      };
     };
     Enums: {
       [_ in never]: never;

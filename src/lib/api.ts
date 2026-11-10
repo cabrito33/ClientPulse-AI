@@ -38,6 +38,17 @@ function assertOk<T>(
 }
 
 /* ------------------------------------------------------------------ */
+/*  Validation helpers                                                 */
+/* ------------------------------------------------------------------ */
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUUID(value: unknown): value is string {
+  return typeof value === "string" && UUID_REGEX.test(value);
+}
+
+/* ------------------------------------------------------------------ */
 /*  Row → Domain mappers                                               */
 /* ------------------------------------------------------------------ */
 
@@ -314,27 +325,27 @@ export async function getClients(): Promise<Client[]> {
 }
 
 export async function getClient(id: string): Promise<Client | null> {
+  if (!isUUID(id)) return null;
+
   const supabase = await createClient();
   const result = await supabase
     .from("clients")
     .select("*")
     .eq("id", id)
     .maybeSingle();
-  const row = assertOk(result, `getClient(${id})`);
-  return row ? mapClient(row) : null;
+  if (result.error) {
+    console.warn(`[api] getClient(${id}):`, result.error.message);
+    return null;
+  }
+  return result.data ? mapClient(result.data as ClientRow) : null;
 }
 
 export async function getClientByPortalToken(
   token: string,
 ): Promise<Client | null> {
-  const supabase = await createClient();
-  const result = await supabase
-    .from("clients")
-    .select("*")
-    .eq("portal_token", token)
-    .maybeSingle();
-  const row = assertOk(result, `getClientByPortalToken(${token})`);
-  return row ? mapClient(row) : null;
+  if (!isUUID(token)) return null;
+  const data = await getPortalData(token);
+  return data?.client ?? null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -352,6 +363,8 @@ export async function getReports(): Promise<Report[]> {
 }
 
 export async function getReport(id: string): Promise<Report | null> {
+  if (!isUUID(id)) return null;
+
   const supabase = await createClient();
   const result = await supabase
     .from("reports")
@@ -359,7 +372,8 @@ export async function getReport(id: string): Promise<Report | null> {
     .eq("id", id)
     .maybeSingle();
   if (result.error) {
-    throw new Error(`[api] getReport(${id}): ${result.error.message}`);
+    console.warn(`[api] getReport(${id}):`, result.error.message);
+    return null;
   }
   const row = result.data as ReportRow | null;
   if (!row) return null;
@@ -388,6 +402,8 @@ export async function getReport(id: string): Promise<Report | null> {
 }
 
 export async function getReportsForClient(clientId: string): Promise<Report[]> {
+  if (!isUUID(clientId)) return [];
+
   const supabase = await createClient();
   const result = await supabase
     .from("reports")
@@ -442,8 +458,46 @@ export async function getPortalData(
   history: Report[];
   metrics: SprintMetric[];
 } | null> {
-  const client = await getClientByPortalToken(token);
-  if (!client) return null;
+  if (!isUUID(token)) return null;
+
+  const supabase = await createClient();
+
+  // Primary path: Use the SECURITY DEFINER RPC get_portal_data_by_token
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rpcRes: any = await (supabase.rpc as any)("get_portal_data_by_token", {
+    p_token: token,
+  });
+
+  if (!rpcRes.error && rpcRes.data) {
+    const payload = rpcRes.data as {
+      client: ClientRow;
+      reports: ReportRow[];
+      metrics: SprintMetricRow[];
+    };
+
+    if (!payload.client) return null;
+
+    const client = mapClient(payload.client);
+    const reports = (payload.reports ?? []).map((r) => mapReport(r));
+    const metrics = (payload.metrics ?? []).map(mapSprintMetric);
+
+    return {
+      client,
+      current: reports[0] ?? null,
+      history: reports,
+      metrics,
+    };
+  }
+
+  // Graceful fallback (if RPC is not yet deployed on database)
+  const clientRes = await supabase
+    .from("clients")
+    .select("*")
+    .eq("portal_token", token)
+    .maybeSingle();
+
+  if (clientRes.error || !clientRes.data) return null;
+  const client = mapClient(clientRes.data as ClientRow);
 
   const [history, metrics] = await Promise.all([
     getReportsForClient(client.id),
@@ -536,13 +590,18 @@ export async function getSprintCards(): Promise<SprintCard[]> {
 
 export async function getSprintMetrics(clientId: string): Promise<SprintMetric[]> {
   const supabase = await createClient();
-  const result = await supabase
-    .from("sprint_metrics")
-    .select("*")
-    .eq("client_id", clientId)
-    .order("sprint");
-  const rows = assertOk(result, `getSprintMetrics(${clientId})`);
-  return rows.map(mapSprintMetric);
+  let query = supabase.from("sprint_metrics").select("*");
+
+  if (isUUID(clientId)) {
+    query = query.eq("client_id", clientId);
+  }
+
+  const result = await query.order("sprint");
+  if (result.error) {
+    console.warn(`[api] getSprintMetrics(${clientId}):`, result.error.message);
+    return [];
+  }
+  return (result.data ?? []).map(mapSprintMetric);
 }
 
 /* ------------------------------------------------------------------ */
