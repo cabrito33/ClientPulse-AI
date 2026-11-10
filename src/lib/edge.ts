@@ -175,5 +175,22 @@ function handleMockEdgeInvocation<T>(functionName: string, body: unknown): T {
     } as T;
   }
 
+  if (functionName === "onboarding-chat") {
+    const msg = (payload.message as string) || "";
+    const hasPat = /(github_pat_[a-zA-Z0-9_]{30,}|ghp_[a-zA-Z0-9]{36,})/.test(msg);
+    return {
+      reply: hasPat
+        ? "Excelente! O teu token GitHub foi validado com sucesso. Podes agora selecionar o teu board abaixo para avançar."
+        : "Olá! Posso ajudar-te com qualquer dúvida sobre a configuração ou podes introduzir o teu Personal Access Token (PAT) do GitHub.",
+      action_detected: hasPat
+        ? { action: "pat_validated", data: { username: "demo-user", connected: true } }
+        : { action: "awaiting_pat" },
+      github_status: {
+        is_connected: hasPat,
+        username: hasPat ? "demo-user" : null,
+      },
+    } as T;
+  }
+
   return { success: true } as T;
 }

@@ -12,8 +12,10 @@ import {
   Sparkles,
   Columns3,
   UserCheck,
-  Volume2,
+  Send,
+  Loader2,
 } from "lucide-react";
+import { sendOnboardingMessageAction, type OnboardingChatMessage } from "@/app/actions/onboarding";
 
 function GithubMark({ className }: { className?: string }) {
   return (
@@ -33,7 +35,6 @@ type Step = 1 | 2 | 3 | 4;
 export default function OnboardingPage() {
   const [step, setStep] = useState<Step>(1);
   const [selectedProject, setSelectedProject] = useState(demoProjects[0]);
-  const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [columnMap, setColumnMap] = useState({
     done: "Concluído",
     in_progress: "Em curso",
@@ -47,8 +48,68 @@ export default function OnboardingPage() {
     frequency: "weekly",
   });
 
-  function toggleVoice() {
-    setIsVoiceActive((v) => !v);
+  const [messages, setMessages] = useState<OnboardingChatMessage[]>([
+    {
+      role: "assistant",
+      content:
+        "Olá! Vou ajudar-te a configurar a tua conta em menos de 5 minutos. Primeiro, conecta a tua conta do GitHub colando o teu Personal Access Token (PAT) ou escolhendo o teu board.",
+    },
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [githubConnected, setGithubConnected] = useState(false);
+  const [githubUsername, setGithubUsername] = useState<string | null>(null);
+
+  async function handleSendMessage(e: React.FormEvent) {
+    e.preventDefault();
+    const rawText = chatInput.trim();
+    if (!rawText || isChatLoading) return;
+
+    // Limpar o campo imediatamente para nunca reter o PAT no formulário
+    setChatInput("");
+    setChatError(null);
+
+    // Mascarar o PAT no estado local do browser para nunca guardar em texto simples
+    const patRegex = /(github_pat_[a-zA-Z0-9_]{30,}|ghp_[a-zA-Z0-9]{36,})/;
+    const isPat = patRegex.test(rawText);
+    const displayContent = isPat
+      ? "•••••••••••••••••••••••••••••••• (Token PAT do GitHub enviado)"
+      : rawText;
+
+    const previousHistory = [...messages];
+    setMessages((prev) => [...prev, { role: "user", content: displayContent }]);
+    setIsChatLoading(true);
+
+    try {
+      const res = await sendOnboardingMessageAction(rawText, previousHistory);
+      if (res.success && res.data) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: res.data.reply },
+        ]);
+
+        if (res.data.github_status?.is_connected) {
+          setGithubConnected(true);
+          if (res.data.github_status.username) {
+            setGithubUsername(res.data.github_status.username);
+          }
+        }
+
+        if (res.data.action_detected?.action === "pat_validated") {
+          setGithubConnected(true);
+          const u = res.data.action_detected.data?.username as string | undefined;
+          if (u) setGithubUsername(u);
+        }
+      } else {
+        const err = !res.success ? res.error : "Não foi possível obter resposta.";
+        setChatError(err);
+      }
+    } catch (err: unknown) {
+      setChatError(err instanceof Error ? err.message : "Erro ao enviar mensagem.");
+    } finally {
+      setIsChatLoading(false);
+    }
   }
 
   return (
@@ -102,41 +163,107 @@ export default function OnboardingPage() {
         </div>
 
         {/* Assistant Dialog Header */}
-        <div className="flex items-start gap-4 rounded-2xl border border-line bg-surface p-5 sm:p-6 shadow-sm">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">
-            <Bot className="h-5 w-5" aria-hidden="true" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-ink">PulseBot · Assistente de Onboarding</p>
-                <Badge tone="accent">Guia interativo</Badge>
+        <div className="flex flex-col gap-4 rounded-2xl border border-line bg-surface p-5 sm:p-6 shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">
+              <Bot className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-ink">PulseBot · Assistente de Onboarding</p>
+                  <Badge tone="accent">Guia interativo</Badge>
+                  {githubConnected && (
+                    <Badge tone="teal" dot>
+                      GitHub Conectado {githubUsername ? `(@${githubUsername})` : ""}
+                    </Badge>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  disabled
+                  title="Modo de voz planeado para a próxima versão"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-line bg-sand/40 px-2.5 py-1 text-xs font-medium text-muted cursor-not-allowed opacity-75"
+                >
+                  <Mic className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span className="hidden sm:inline">Voz: planeado</span>
+                </button>
               </div>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted">
+                {messages[messages.length - 1]?.role === "assistant"
+                  ? messages[messages.length - 1].content
+                  : step === 1
+                  ? "Olá! Vou ajudar-te a configurar a tua conta em menos de 5 minutos. Primeiro, conecta a tua conta do GitHub e seleciona o board do teu primeiro projeto."
+                  : step === 2
+                  ? "Excelente ligação! Agora mapeia as colunas do teu board para que o motor de IA saiba exatamente quais tarefas estão terminadas, bloqueadas ou em desenvolvimento."
+                  : step === 3
+                  ? "Quase pronto. Define o perfil do teu cliente: para quem vamos enviar o relatório, em que idioma e qual o tom de comunicação pretendido."
+                  : "Tudo configurado com sucesso! Já gerei o primeiro rascunho com a síntese em 3 blocos para tua revisão."}
+              </p>
+            </div>
+          </div>
+
+          {/* Interactive Chat History & Input */}
+          <div className="border-t border-line/70 pt-3">
+            {messages.length > 1 && (
+              <div className="mb-3 max-h-48 overflow-y-auto space-y-2 pr-1 text-xs">
+                {messages.map((m, idx) => (
+                  <div
+                    key={idx}
+                    className={cn(
+                      "flex gap-2 rounded-lg p-2.5 leading-relaxed",
+                      m.role === "user"
+                        ? "bg-accent-soft/40 text-ink ml-6 sm:ml-12 justify-end"
+                        : "bg-sand/50 text-ink-soft mr-6 sm:mr-12"
+                    )}
+                  >
+                    <span className="font-semibold text-muted-soft shrink-0">
+                      {m.role === "user" ? "Tu:" : "PulseBot:"}
+                    </span>
+                    <span>{m.content}</span>
+                  </div>
+                ))}
+                {isChatLoading && (
+                  <div className="flex items-center gap-2 rounded-lg bg-sand/40 p-2.5 text-xs text-muted">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>PulseBot está a pensar...</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <form onSubmit={handleSendMessage} className="flex gap-2">
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Fala com o PulseBot ou cola aqui o teu PAT do GitHub..."
+                disabled={isChatLoading}
+                className="flex-1 rounded-xl border border-line bg-paper/60 px-3.5 py-2 text-xs text-ink placeholder:text-muted-soft outline-none focus:border-accent"
+              />
               <button
-                type="button"
-                onClick={toggleVoice}
-                aria-label={isVoiceActive ? "Desativar voz" : "Ativar modo de voz"}
+                type="submit"
+                disabled={isChatLoading || !chatInput.trim()}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-                  isVoiceActive
-                    ? "bg-accent text-white"
-                    : "border border-line bg-sand/60 text-muted hover:text-ink",
+                  buttonClass("primary", "sm"),
+                  "text-xs font-medium px-3.5 shrink-0"
                 )}
               >
-                {isVoiceActive ? <Volume2 className="h-3.5 w-3.5 animate-pulse" /> : <Mic className="h-3.5 w-3.5" />}
-                <span className="hidden sm:inline">{isVoiceActive ? "Voz ativa" : "Ouvir voz"}</span>
+                {isChatLoading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <>
+                    <span>Enviar</span>
+                    <Send className="h-3 w-3" />
+                  </>
+                )}
               </button>
-            </div>
-            <p className="mt-1.5 text-sm leading-relaxed text-muted">
-              {step === 1 &&
-                "Olá! Vou ajudar-te a configurar a tua conta em menos de 5 minutos. Primeiro, conecta a tua conta do GitHub e seleciona o board do teu primeiro projeto."}
-              {step === 2 &&
-                "Excelente ligação! Agora mapeia as colunas do teu board para que o motor de IA saiba exatamente quais tarefas estão terminadas, bloqueadas ou em desenvolvimento."}
-              {step === 3 &&
-                "Quase pronto. Define o perfil do teu cliente: para quem vamos enviar o relatório, em que idioma e qual o tom de comunicação pretendido."}
-              {step === 4 &&
-                "Tudo configurado com sucesso! Já gerei o primeiro rascunho com a síntese em 3 blocos para tua revisão."}
-            </p>
+            </form>
+            {chatError && (
+              <p className="mt-1.5 text-[11.5px] text-accent font-medium">
+                {chatError}
+              </p>
+            )}
           </div>
         </div>
 
@@ -150,6 +277,29 @@ export default function OnboardingPage() {
             <p className="mt-1 text-xs text-muted">
               Apenas os metadados das tarefas (títulos, estados, etiquetas) são acedidos. O código-fonte nunca é lido.
             </p>
+
+            {githubConnected ? (
+              <div className="mt-4 flex items-center justify-between rounded-xl border border-teal/30 bg-teal-soft/20 p-3.5">
+                <div className="flex items-center gap-2.5">
+                  <span className="grid h-7 w-7 place-items-center rounded-full bg-teal text-white">
+                    <Check className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <p className="text-xs font-semibold text-ink">
+                      Ligação GitHub Ativa {githubUsername ? `(@${githubUsername})` : ""}
+                    </p>
+                    <p className="text-[11px] text-muted">
+                      Token validado com permissão de leitura aos projetos.
+                    </p>
+                  </div>
+                </div>
+                <Badge tone="teal" dot>Conectado</Badge>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-xl border border-line bg-paper/60 p-3.5 text-xs text-muted">
+                Dica: Podes colar o teu Personal Access Token (PAT) diretamente no assistente PulseBot acima para ligar a tua conta instantaneamente.
+              </div>
+            )}
 
             <div className="mt-6 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-soft">
