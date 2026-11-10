@@ -101,19 +101,59 @@ Deno.serve(async (req: Request) => {
 
     // 5. Send Transactional Email via Resend
     const appUrl = Deno.env.get('NEXT_PUBLIC_APP_URL') || 'http://localhost:3000';
-    const emailResult = await sendReportEmail({
-      toEmail: client.email,
-      clientName: client.name,
-      companyName: client.company_name,
-      periodStart: report.period_start,
-      periodEnd: report.period_end,
-      summaryDone,
-      summaryBlockers,
-      summaryNextSteps,
-      portalToken: client.portal_token,
-      appUrl,
-      language: (client.language as 'pt' | 'en') ?? 'pt',
-    });
+    let emailResult: { id: string; mock: boolean };
+
+    try {
+      emailResult = await sendReportEmail({
+        toEmail: client.email,
+        clientName: client.name,
+        companyName: client.company_name,
+        periodStart: report.period_start,
+        periodEnd: report.period_end,
+        summaryDone,
+        summaryBlockers,
+        summaryNextSteps,
+        portalToken: client.portal_token,
+        appUrl,
+        language: (client.language as 'pt' | 'en') ?? 'pt',
+      });
+    } catch (emailErr: unknown) {
+      const emailErrMsg = emailErr instanceof Error ? emailErr.message : String(emailErr);
+      const now = new Date().toISOString();
+
+      // Mark report as failed so dashboard alert and manual resend button trigger!
+      await supabase
+        .from('reports')
+        .update({
+          status: 'failed',
+          summary_done: summaryDone,
+          summary_blockers: summaryBlockers,
+          summary_next_steps: summaryNextSteps,
+          updated_at: now,
+        })
+        .eq('id', report.id);
+
+      // Record audit record in delivery_logs
+      await supabase.from('delivery_logs').insert({
+        report_id: report.id,
+        client_id: report.client_id,
+        agency_id: report.agency_id,
+        status: 'failed',
+        email_service: 'resend',
+        recipient_email: client.email,
+        error_message: emailErrMsg,
+        sent_at: now,
+      });
+
+      return new Response(
+        JSON.stringify({
+          error: `Falha no envio de e-mail (Resend): ${emailErrMsg}. O relatório foi marcado com falha para permitir reenvio.`,
+          report_id: report.id,
+          status: 'failed',
+        }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     const now = new Date().toISOString();
 
@@ -134,6 +174,18 @@ Deno.serve(async (req: Request) => {
     if (updateError) {
       throw new Error(`Report sent but failed to update status: ${updateError.message}`);
     }
+
+    // Record audit record in delivery_logs
+    await supabase.from('delivery_logs').insert({
+      report_id: report.id,
+      client_id: report.client_id,
+      agency_id: report.agency_id,
+      status: 'sent',
+      email_service: 'resend',
+      recipient_email: client.email,
+      message_id: emailResult.id,
+      sent_at: now,
+    });
 
     return new Response(
       JSON.stringify({

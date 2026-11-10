@@ -12,6 +12,7 @@
  */
 
 import { createClient } from "@/lib/supabase/server";
+import { invokeEdgeFunction } from "@/lib/edge";
 import type { Tables } from "@/types/database.types";
 import type {
   Client,
@@ -746,85 +747,99 @@ export async function recordSprintMetric(data: {
 /* ------------------------------------------------------------------ */
 
 /**
- * Approves a report and marks it as sent in Supabase.
- * Updates `status`, `approved_at`, `sent_at`, and the three summary columns
- * derived from the edited body. Keeps the function signature unchanged.
+ * Approves a report and sends it via the approve-and-send Edge Function.
+ * Updates status to 'sent' and dispatches transactional email with the portal link.
  */
 export async function approveAndSend(
   id: string,
   editedBody: string,
 ): Promise<Report> {
-  const supabase = await createClient();
-
   const sections = parseBodyToSections(editedBody);
-  const now = new Date().toISOString();
 
-  // Build the typed patch — only columns allowed by UpdateTables<"reports">.
-  const summaryPatch = sections
-    ? {
-        summary_done: sections.done.join("\n"),
-        summary_blockers: sections.blocks.join("\n"),
-        summary_next_steps: sections.next.join("\n"),
-      }
-    : {};
+  await invokeEdgeFunction<{
+    success: boolean;
+    report_id: string;
+    status: string;
+  }>("approve-and-send", {
+    report_id: id,
+    updated_blocks: sections
+      ? {
+          done: sections.done.join("\n"),
+          blockers: sections.blocks.join("\n"),
+          next_steps: sections.next.join("\n"),
+        }
+      : undefined,
+  });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await (supabase.from("reports") as any)
-    .update({
-      status: "sent",
-      approved_at: now,
-      sent_at: now,
-      updated_at: now,
-      ...summaryPatch,
-    })
-    .eq("id", id)
-    .select("*")
-    .single();
-
-  if (result.error) throw new Error(`[api] approveAndSend(${id}): ${result.error.message}`);
-  return mapReport(result.data as ReportRow);
+  const updated = await getReport(id);
+  if (!updated) {
+    throw new Error(`[api] Falha ao recuperar o relatório aprovado (${id})`);
+  }
+  return updated;
 }
 
 /**
- * Retries sending a failed report.
- * Updates status to 'sent', updates timestamps and logs delivery.
+ * Retries sending an existing report via the approve-and-send Edge Function.
+ * Reuses the existing 3 blocks stored in the report without modification.
  */
 export async function resendReport(id: string): Promise<Report> {
-  const supabase = await createClient();
-  const now = new Date().toISOString();
+  await invokeEdgeFunction<{
+    success: boolean;
+    report_id: string;
+    status: string;
+  }>("approve-and-send", {
+    report_id: id,
+  });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await (supabase.from("reports") as any)
-    .update({
-      status: "sent",
-      approved_at: now,
-      sent_at: now,
-      updated_at: now,
-    })
-    .eq("id", id)
-    .select("*")
-    .single();
+  const updated = await getReport(id);
+  if (!updated) {
+    throw new Error(`[api] Falha ao recuperar o relatório reenviado (${id})`);
+  }
+  return updated;
+}
 
-  if (result.error) throw new Error(`[api] resendReport(${id}): ${result.error.message}`);
-  const reportRow = result.data as ReportRow;
+/**
+ * Generates an executive weekly report on-demand for a client via the generate-report Edge Function.
+ * Fetches recent GitHub task items, synthesizes them with Gemini AI, and creates a new draft.
+ */
+export async function generateReportOnDemand(
+  clientId: string,
+  customNotes?: string,
+): Promise<{ reportId: string }> {
+  const res = await invokeEdgeFunction<{
+    success: boolean;
+    report_id: string;
+    client_id: string;
+    status: string;
+  }>("generate-report", {
+    client_id: clientId,
+    custom_notes: customNotes,
+    period_days: 7,
+  });
 
-  // Insert audit record in delivery_logs if possible
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase.from("delivery_logs") as any).insert({
-      report_id: reportRow.id,
-      client_id: reportRow.client_id,
-      agency_id: reportRow.agency_id,
-      status: "sent",
-      email_service: "resend",
-      recipient_email: "client@pulse.local",
-      sent_at: now,
-    });
-  } catch (err) {
-    console.warn("[api] Could not insert delivery log on resend:", err);
+  if (!res.report_id) {
+    throw new Error("O servidor não devolveu o identificador do relatório gerado.");
   }
 
-  return mapReport(reportRow);
+  return { reportId: res.report_id };
+}
+
+/**
+ * Saves client column mapping in the database.
+ */
+export async function updateClientColumnMapping(
+  clientId: string,
+  columnMapping: Record<string, string[]>,
+): Promise<void> {
+  const supabase = await createClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.from("clients") as any)
+    .update({ column_mapping: columnMapping })
+    .eq("id", clientId);
+
+  if (error) {
+    throw new Error(`[api] updateClientColumnMapping: ${error.message}`);
+  }
 }
 
 /* ------------------------------------------------------------------ */

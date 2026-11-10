@@ -5,6 +5,7 @@ import { getClient, getReportsForClient, getSprintMetrics } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { buttonClass } from "@/components/ui/button";
 import { CompletedBySprintChart } from "@/components/dashboard/charts";
+import { GenerateReportButton } from "@/components/dashboard/generate-report-button";
 import { formatDate } from "@/lib/utils";
 
 interface ClientPageProps {
@@ -69,10 +70,11 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
             <ArrowUpRight className="h-3.5 w-3.5" />
             Abrir portal do cliente
           </Link>
+          <GenerateReportButton clientId={client.id} />
           {reports[0] && (
             <Link
               href={`/dashboard/reports/${reports[0].id}`}
-              className={buttonClass("primary", "sm")}
+              className={buttonClass("secondary", "sm")}
             >
               Ver relatório recente
             </Link>

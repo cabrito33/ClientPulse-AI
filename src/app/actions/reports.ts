@@ -1,17 +1,25 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { approveAndSend, resendReport } from "@/lib/api";
+import {
+  approveAndSend,
+  resendReport,
+  generateReportOnDemand,
+  updateClientColumnMapping,
+} from "@/lib/api";
 
 /**
- * Server Action to approve and send a report.
- * Revalidates the dashboard and report review page paths.
+ * Server Action to approve and send a report via the approve-and-send Edge Function.
+ * Dispatches the email with portal link via Resend.
  */
 export async function approveAndSendAction(id: string, editedBody: string) {
   try {
     const report = await approveAndSend(id, editedBody);
     revalidatePath("/dashboard");
     revalidatePath(`/dashboard/reports/${id}`);
+    if (report.clientId) {
+      revalidatePath(`/dashboard/clients/${report.clientId}`);
+    }
     return { success: true as const, report };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Erro ao aprovar e enviar relatório";
@@ -20,17 +28,53 @@ export async function approveAndSendAction(id: string, editedBody: string) {
 }
 
 /**
- * Server Action to manually resend a failed report.
- * Revalidates the dashboard and report review page paths.
+ * Server Action to manually resend a failed report via the approve-and-send Edge Function.
+ * Reuses the existing 3 blocks stored in the report.
  */
 export async function resendReportAction(id: string) {
   try {
     const report = await resendReport(id);
     revalidatePath("/dashboard");
     revalidatePath(`/dashboard/reports/${id}`);
+    if (report.clientId) {
+      revalidatePath(`/dashboard/clients/${report.clientId}`);
+    }
     return { success: true as const, report };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Erro ao reenviar relatório";
+    return { success: false as const, error: message };
+  }
+}
+
+/**
+ * Server Action to generate a new report draft on demand for a client.
+ * Calls the generate-report Edge Function.
+ */
+export async function generateReportAction(clientId: string, customNotes?: string) {
+  try {
+    const { reportId } = await generateReportOnDemand(clientId, customNotes);
+    revalidatePath("/dashboard");
+    revalidatePath(`/dashboard/clients/${clientId}`);
+    return { success: true as const, reportId };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Erro ao gerar novo relatório";
+    return { success: false as const, error: message };
+  }
+}
+
+/**
+ * Server Action to save column mapping for a client.
+ */
+export async function saveColumnMappingAction(
+  clientId: string,
+  columnMapping: Record<string, string[]>,
+) {
+  try {
+    await updateClientColumnMapping(clientId, columnMapping);
+    revalidatePath(`/dashboard/clients/${clientId}`);
+    return { success: true as const };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Erro ao guardar mapeamento de colunas";
     return { success: false as const, error: message };
   }
 }
