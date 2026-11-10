@@ -36,24 +36,43 @@ BEGIN
 
     -- =========================================================================
     -- SETUP: Criar dados fictícios para os dois utilizadores
-    -- (executado como superuser — bypassa RLS)
+    -- (executado como superuser / postgres — bypassa RLS)
     -- =========================================================================
-    RAISE NOTICE '[SETUP] A criar agências e clientes de teste...';
+    RAISE NOTICE '[SETUP] A criar utilizadores, agências e clientes de teste...';
 
-    -- Inserir agência A (utilizador A)
+    -- Inserir utilizadores fictícios em auth.users (necessário pela FK em agencies.user_id)
+    -- O trigger on_auth_user_created cria automaticamente a agência e o perfil.
+    INSERT INTO auth.users (
+        id, instance_id, aud, role, email,
+        encrypted_password, email_confirmed_at,
+        created_at, updated_at, raw_app_meta_data, raw_user_meta_data
+    ) VALUES
+        (
+            v_user_a, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+            'rls-test-a@clientpulse.local', '$2a$10$dummyhashfordummytestuser0000000000000000000000',
+            now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Teste RLS A"}'::jsonb
+        ),
+        (
+            v_user_b, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+            'rls-test-b@clientpulse.local', '$2a$10$dummyhashfordummytestuser0000000000000000000000',
+            now(), now(), now(), '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Teste RLS B"}'::jsonb
+        )
+    ON CONFLICT (id) DO NOTHING;
+
+    -- Obter ou inserir agência A (utilizador A)
     INSERT INTO public.agencies (id, user_id, name)
     VALUES (gen_random_uuid(), v_user_a, 'Agência A — Teste RLS')
-    ON CONFLICT DO NOTHING
+    ON CONFLICT (user_id) DO NOTHING
     RETURNING id INTO v_agency_a;
 
     IF v_agency_a IS NULL THEN
         SELECT id INTO v_agency_a FROM public.agencies WHERE user_id = v_user_a;
     END IF;
 
-    -- Inserir agência B (utilizador B)
+    -- Obter ou inserir agência B (utilizador B)
     INSERT INTO public.agencies (id, user_id, name)
     VALUES (gen_random_uuid(), v_user_b, 'Agência B — Teste RLS')
-    ON CONFLICT DO NOTHING
+    ON CONFLICT (user_id) DO NOTHING
     RETURNING id INTO v_agency_b;
 
     IF v_agency_b IS NULL THEN
@@ -238,8 +257,9 @@ BEGIN
 
     RESET ROLE;
 
-    -- Remover dados na ordem inversa das FK (CASCADE faz o resto)
+    -- Remover utilizadores e dados de teste (ON DELETE CASCADE limpa agencies, profiles, clients, reports)
     DELETE FROM public.agencies WHERE user_id IN (v_user_a, v_user_b);
+    DELETE FROM auth.users WHERE id IN (v_user_a, v_user_b);
 
     RAISE NOTICE '[TEARDOWN] Dados removidos.';
     RAISE NOTICE '';
@@ -249,5 +269,6 @@ EXCEPTION WHEN OTHERS THEN
     -- Garantir que o role é sempre reposto mesmo em caso de erro
     RESET ROLE;
     DELETE FROM public.agencies WHERE user_id IN (v_user_a, v_user_b);
+    DELETE FROM auth.users WHERE id IN (v_user_a, v_user_b);
     RAISE EXCEPTION 'TESTE FALHOU: %', SQLERRM;
 END $$;
