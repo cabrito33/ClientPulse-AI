@@ -24,6 +24,7 @@
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { createUserClient, getAuthenticatedUser } from '../_shared/supabaseClient.ts';
 import { testGitHubToken } from '../_shared/github.ts';
+import { encryptPat } from '../_shared/crypto.ts';
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'model';
@@ -87,7 +88,7 @@ Deno.serve(async (req: Request) => {
         tokenValidationResult.success = true;
         tokenValidationResult.username = ghUser.username;
 
-        // Automatically store or update the verified PAT in database for this agency
+        // Automatically store or update the verified PAT in database for this agency (encrypted in repose)
         const { data: agency } = await supabase
           .from('agencies')
           .select('id')
@@ -95,10 +96,12 @@ Deno.serve(async (req: Request) => {
           .single();
 
         if (agency) {
+          const encryptedPat = await encryptPat(extractedPat);
           await supabase.from('github_integrations').upsert(
             {
               agency_id: agency.id,
-              pat_token: extractedPat,
+              pat_token: null,
+              pat_token_encrypted: encryptedPat,
               github_username: ghUser.username,
               is_valid: true,
               last_synced_at: new Date().toISOString(),

@@ -193,7 +193,19 @@ sequenceDiagram
   - `GEMINI_API_KEY`: Stored in Supabase Vault / Edge Function Secrets.
   - `RESEND_API_KEY`: Stored in Supabase Secrets.
   - `SUPABASE_SERVICE_ROLE_KEY`: Used only inside server-side Edge Functions.
-- GitHub Personal Access Tokens (PAT) are stored in `github_integrations` and accessed only by backend functions.
+  - `SCHEDULED_FUNCTION_SECRET`: Shared secret used by `pg_cron` / `pg_net` to trigger `/dispatch-scheduled-reports`. Set via `supabase secrets set SCHEDULED_FUNCTION_SECRET="<secret>"`.
+  - `PAT_ENCRYPTION_KEY`: 32-byte base64 key used for AES-GCM encryption of GitHub PATs in repose.
+
+### 5.5 GitHub PAT Symmetric Encryption at Rest (Issue #19)
+- **Algorithm:** AES-GCM (Authenticated Encryption) 256-bit with standard Web Crypto API.
+- **Storage Format:** Stored in `github_integrations.pat_token_encrypted` as `<base64_iv>:<base64_ciphertext>`.
+- **Initialization Vector (IV):** 12-byte cryptographically secure random IV generated per encryption (`crypto.getRandomValues`).
+- **Key Storage:** Read strictly inside Edge Functions via `Deno.env.get('PAT_ENCRYPTION_KEY')` (never exposed to browser, frontend or logged).
+- **Migration & Existing Data:** Migration `007_be_19_encrypt_pat.sql` converted `pat_token` to nullable and cleared plaintext rows. In accordance with issue #19, test users re-enter their token during onboarding which automatically saves it encrypted.
+- **Key Rotation Procedure:**
+  1. Generate new 32-byte key: `openssl rand -base64 32`.
+  2. In rotation script, read current `pat_token_encrypted` rows, decrypt with current `PAT_ENCRYPTION_KEY`, re-encrypt with new key, and update rows.
+  3. Update secret in Supabase: `npx supabase secrets set PAT_ENCRYPTION_KEY="<new_key>"`.
 
 ---
 

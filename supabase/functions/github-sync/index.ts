@@ -23,6 +23,7 @@ import {
   fetchProjectColumns,
   fetchBoardTasks,
 } from '../_shared/github.ts';
+import { encryptPat, decryptPat } from '../_shared/crypto.ts';
 
 Deno.serve(async (req: Request) => {
   // 1. Handle browser CORS preflight
@@ -60,18 +61,18 @@ Deno.serve(async (req: Request) => {
 
     // 4. Resolve GitHub Personal Access Token (PAT)
     // The caller can provide a PAT directly in the request (e.g. during onboarding),
-    // OR we automatically fetch their stored PAT from the database.
+    // OR we automatically fetch their stored PAT from the database (decrypting if encrypted).
     let token = pat_token?.trim();
 
     if (!token) {
       const supabase = createUserClient(req);
       const { data: integration, error: dbError } = await supabase
         .from('github_integrations')
-        .select('pat_token')
+        .select('pat_token, pat_token_encrypted')
         .limit(1)
         .maybeSingle();
 
-      if (dbError || !integration?.pat_token) {
+      if (dbError || (!integration?.pat_token && !integration?.pat_token_encrypted)) {
         return new Response(
           JSON.stringify({
             error: "No GitHub PAT provided and no saved integration found for your agency. Please provide 'pat_token'.",
@@ -79,7 +80,12 @@ Deno.serve(async (req: Request) => {
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      token = integration.pat_token;
+
+      if (integration.pat_token_encrypted) {
+        token = await decryptPat(integration.pat_token_encrypted);
+      } else if (integration.pat_token) {
+        token = integration.pat_token;
+      }
     }
 
     // 5. Execute Action
@@ -90,6 +96,44 @@ Deno.serve(async (req: Request) => {
       case 'test-connection': {
         const result = await testGitHubToken(token);
         return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // ------------------------------------------------------------------------
+      // Action: save-pat
+      // ------------------------------------------------------------------------
+      case 'save-pat': {
+        const result = await testGitHubToken(token);
+        const supabase = createUserClient(req);
+        const { data: agency } = await supabase
+          .from('agencies')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+
+        if (!agency) {
+          return new Response(JSON.stringify({ error: 'Agency not found for authenticated user.' }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const encrypted = await encryptPat(token);
+        await supabase.from('github_integrations').upsert(
+          {
+            agency_id: agency.id,
+            pat_token: null,
+            pat_token_encrypted: encrypted,
+            github_username: result.username,
+            is_valid: true,
+            last_synced_at: new Date().toISOString(),
+          },
+          { onConflict: 'agency_id' }
+        );
+
+        return new Response(JSON.stringify({ success: true, username: result.username }), {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });

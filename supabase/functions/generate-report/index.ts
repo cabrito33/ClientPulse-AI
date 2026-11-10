@@ -19,6 +19,7 @@ import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { createUserClient, createAdminClient, getAuthenticatedUser } from '../_shared/supabaseClient.ts';
 import { fetchBoardTasks } from '../_shared/github.ts';
 import { generateExecutiveReport } from '../_shared/gemini.ts';
+import { decryptPat } from '../_shared/crypto.ts';
 
 Deno.serve(async (req: Request) => {
   // 1. Handle CORS preflight
@@ -78,14 +79,21 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 5. Fetch Agency GitHub PAT Token
+    // 5. Fetch Agency GitHub PAT Token (decrypting if stored encrypted)
     const { data: integration, error: integrationError } = await supabase
       .from('github_integrations')
-      .select('pat_token')
+      .select('pat_token, pat_token_encrypted')
       .eq('agency_id', client.agency_id)
       .single();
 
-    if (integrationError || !integration?.pat_token) {
+    let patToken: string | null = null;
+    if (integration?.pat_token_encrypted) {
+      patToken = await decryptPat(integration.pat_token_encrypted);
+    } else if (integration?.pat_token) {
+      patToken = integration.pat_token;
+    }
+
+    if (integrationError || !patToken) {
       return new Response(
         JSON.stringify({
           error: "GitHub integration not configured for this agency. Please save a GitHub Personal Access Token first.",
@@ -97,7 +105,7 @@ Deno.serve(async (req: Request) => {
     // 6. Fetch Raw Tasks from GitHub Projects v2 GraphQL
     const days = period_days && period_days > 0 ? Number(period_days) : 7;
     const tasks = await fetchBoardTasks(
-      integration.pat_token,
+      patToken,
       client.github_project_id,
       client.column_mapping ?? {},
       days

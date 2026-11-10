@@ -89,7 +89,8 @@ export interface Database {
         Row: {
           id: string;
           agency_id: string;
-          pat_token: string;
+          pat_token: string | null;
+          pat_token_encrypted: string | null;
           github_username: string | null;
           is_valid: boolean;
           last_synced_at: string | null;
@@ -98,7 +99,8 @@ export interface Database {
         Insert: {
           id?: string;
           agency_id: string;
-          pat_token: string;
+          pat_token?: string | null;
+          pat_token_encrypted?: string | null;
           github_username?: string | null;
           is_valid?: boolean;
           last_synced_at?: string | null;
@@ -107,7 +109,8 @@ export interface Database {
         Update: {
           id?: string;
           agency_id?: string;
-          pat_token?: string;
+          pat_token?: string | null;
+          pat_token_encrypted?: string | null;
           github_username?: string | null;
           is_valid?: boolean;
           last_synced_at?: string | null;

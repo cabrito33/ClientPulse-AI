@@ -22,6 +22,7 @@ import { createAdminClient } from '../_shared/supabaseClient.ts';
 import { fetchBoardTasks } from '../_shared/github.ts';
 import { generateExecutiveReport } from '../_shared/gemini.ts';
 import { sendReportEmail } from '../_shared/resend.ts';
+import { decryptPat } from '../_shared/crypto.ts';
 
 Deno.serve(async (req: Request) => {
   const corsResponse = handleCors(req);
@@ -73,7 +74,8 @@ Deno.serve(async (req: Request) => {
         portal_token,
         agencies:agency_id (
           github_integrations (
-            pat_token
+            pat_token,
+            pat_token_encrypted
           )
         )
       `)
@@ -112,13 +114,20 @@ Deno.serve(async (req: Request) => {
           ? agency.github_integrations[0]
           : agency?.github_integrations;
 
-        if (!integration?.pat_token) {
+        let patToken: string | null = null;
+        if (integration?.pat_token_encrypted) {
+          patToken = await decryptPat(integration.pat_token_encrypted);
+        } else if (integration?.pat_token) {
+          patToken = integration.pat_token;
+        }
+
+        if (!patToken) {
           throw new Error('Agency does not have a saved GitHub PAT token.');
         }
 
         // Fetch cards from GitHub
         const tasks = await fetchBoardTasks(
-          integration.pat_token,
+          patToken,
           client.github_project_id,
           client.column_mapping ?? {},
           7
