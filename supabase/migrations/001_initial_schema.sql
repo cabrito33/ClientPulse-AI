@@ -156,14 +156,17 @@ CREATE INDEX IF NOT EXISTS idx_report_tasks_client_status ON public.report_tasks
 -- ------------------------------------------------------------------------------
 -- 5. AUTOMATIC TIMESTAMP TRIGGERS
 -- ------------------------------------------------------------------------------
+DROP TRIGGER IF EXISTS trigger_agencies_updated_at ON public.agencies;
 CREATE TRIGGER trigger_agencies_updated_at
     BEFORE UPDATE ON public.agencies
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS trigger_clients_updated_at ON public.clients;
 CREATE TRIGGER trigger_clients_updated_at
     BEFORE UPDATE ON public.clients
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS trigger_reports_updated_at ON public.reports;
 CREATE TRIGGER trigger_reports_updated_at
     BEFORE UPDATE ON public.reports
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -201,11 +204,13 @@ ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.report_tasks ENABLE ROW LEVEL SECURITY;
 
 -- 7.1 Agencies Policies
+DROP POLICY IF EXISTS "Users can view their own agency" ON public.agencies;
 CREATE POLICY "Users can view their own agency"
     ON public.agencies FOR SELECT
     TO authenticated
     USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can update their own agency" ON public.agencies;
 CREATE POLICY "Users can update their own agency"
     ON public.agencies FOR UPDATE
     TO authenticated
@@ -213,11 +218,13 @@ CREATE POLICY "Users can update their own agency"
     WITH CHECK (user_id = auth.uid());
 
 -- 7.2 GitHub Integrations Policies
+DROP POLICY IF EXISTS "Users can view their agency github integration" ON public.github_integrations;
 CREATE POLICY "Users can view their agency github integration"
     ON public.github_integrations FOR SELECT
     TO authenticated
     USING (agency_id IN (SELECT id FROM public.agencies WHERE user_id = auth.uid()));
 
+DROP POLICY IF EXISTS "Users can insert/update their agency github integration" ON public.github_integrations;
 CREATE POLICY "Users can insert/update their agency github integration"
     ON public.github_integrations FOR ALL
     TO authenticated
@@ -225,50 +232,59 @@ CREATE POLICY "Users can insert/update their agency github integration"
     WITH CHECK (agency_id IN (SELECT id FROM public.agencies WHERE user_id = auth.uid()));
 
 -- 7.3 Clients Policies
+DROP POLICY IF EXISTS "Users can view their agency clients" ON public.clients;
 CREATE POLICY "Users can view their agency clients"
     ON public.clients FOR SELECT
     TO authenticated
     USING (agency_id IN (SELECT id FROM public.agencies WHERE user_id = auth.uid()));
 
+DROP POLICY IF EXISTS "Users can insert their agency clients" ON public.clients;
 CREATE POLICY "Users can insert their agency clients"
     ON public.clients FOR INSERT
     TO authenticated
     WITH CHECK (agency_id IN (SELECT id FROM public.agencies WHERE user_id = auth.uid()));
 
+DROP POLICY IF EXISTS "Users can update their agency clients" ON public.clients;
 CREATE POLICY "Users can update their agency clients"
     ON public.clients FOR UPDATE
     TO authenticated
     USING (agency_id IN (SELECT id FROM public.agencies WHERE user_id = auth.uid()))
     WITH CHECK (agency_id IN (SELECT id FROM public.agencies WHERE user_id = auth.uid()));
 
+DROP POLICY IF EXISTS "Users can delete their agency clients" ON public.clients;
 CREATE POLICY "Users can delete their agency clients"
     ON public.clients FOR DELETE
     TO authenticated
     USING (agency_id IN (SELECT id FROM public.agencies WHERE user_id = auth.uid()));
 
 -- 7.4 Reports Policies
+DROP POLICY IF EXISTS "Users can view their agency reports" ON public.reports;
 CREATE POLICY "Users can view their agency reports"
     ON public.reports FOR SELECT
     TO authenticated
     USING (agency_id IN (SELECT id FROM public.agencies WHERE user_id = auth.uid()));
 
+DROP POLICY IF EXISTS "Users can insert reports for their agency" ON public.reports;
 CREATE POLICY "Users can insert reports for their agency"
     ON public.reports FOR INSERT
     TO authenticated
     WITH CHECK (agency_id IN (SELECT id FROM public.agencies WHERE user_id = auth.uid()));
 
+DROP POLICY IF EXISTS "Users can update their agency reports" ON public.reports;
 CREATE POLICY "Users can update their agency reports"
     ON public.reports FOR UPDATE
     TO authenticated
     USING (agency_id IN (SELECT id FROM public.agencies WHERE user_id = auth.uid()))
     WITH CHECK (agency_id IN (SELECT id FROM public.agencies WHERE user_id = auth.uid()));
 
+DROP POLICY IF EXISTS "Users can delete their agency reports" ON public.reports;
 CREATE POLICY "Users can delete their agency reports"
     ON public.reports FOR DELETE
     TO authenticated
     USING (agency_id IN (SELECT id FROM public.agencies WHERE user_id = auth.uid()));
 
 -- 7.5 Report Tasks Policies
+DROP POLICY IF EXISTS "Users can view their agency report tasks" ON public.report_tasks;
 CREATE POLICY "Users can view their agency report tasks"
     ON public.report_tasks FOR SELECT
     TO authenticated
@@ -280,6 +296,7 @@ CREATE POLICY "Users can view their agency report tasks"
         )
     );
 
+DROP POLICY IF EXISTS "Users can manage their agency report tasks" ON public.report_tasks;
 CREATE POLICY "Users can manage their agency report tasks"
     ON public.report_tasks FOR ALL
     TO authenticated
