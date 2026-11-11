@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, useRef, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -532,6 +532,44 @@ function Row({ k, v }: { k: string; v: string }) {
   );
 }
 
+function AutoResizeTextarea({
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  ariaLabel: string;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const adjustHeight = useCallback(() => {
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    }
+  }, []);
+
+  useEffect(() => {
+    adjustHeight();
+  }, [value, adjustHeight]);
+
+  return (
+    <textarea
+      ref={textareaRef}
+      rows={1}
+      value={value}
+      onChange={(e) => {
+        onChange(e.target.value);
+        adjustHeight();
+      }}
+      className="min-w-0 flex-1 resize-none overflow-hidden break-words whitespace-pre-wrap rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[13px] leading-relaxed text-ink outline-none transition-colors hover:border-line focus:border-accent/50 focus:bg-surface"
+      aria-label={ariaLabel}
+    />
+  );
+}
+
 function BlockEditor({
   tone,
   title,
@@ -567,19 +605,17 @@ function BlockEditor({
       </div>
       <ul className="mt-3 space-y-1.5">
         {items.map((item, i) => (
-          <li key={i} className="group flex items-center gap-1.5">
-            <span aria-hidden="true" className="text-[11px] text-muted-soft">•</span>
-            <input
-              type="text"
+          <li key={i} className="group flex items-start gap-1.5">
+            <span aria-hidden="true" className="mt-1 text-[11px] text-muted-soft">•</span>
+            <AutoResizeTextarea
               value={item}
-              onChange={(e) => onChange(i, e.target.value)}
-              className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[13px] text-ink outline-none transition-colors hover:border-line focus:border-accent/50 focus:bg-surface"
-              aria-label={`${title} — item ${i + 1}`}
+              onChange={(val) => onChange(i, val)}
+              ariaLabel={`${title} — item ${i + 1}`}
             />
             <button
               type="button"
               onClick={() => onRemove(i)}
-              className="rounded p-1 text-[11px] text-muted-soft opacity-70 transition-opacity hover:text-accent focus-visible:opacity-100 group-hover:opacity-100 sm:opacity-0"
+              className="mt-0.5 rounded p-1 text-[11px] text-muted-soft opacity-70 transition-opacity hover:text-accent focus-visible:opacity-100 group-hover:opacity-100 sm:opacity-0"
               aria-label={`Remover item ${i + 1} de ${title}`}
             >
               ×
