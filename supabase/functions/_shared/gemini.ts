@@ -108,8 +108,15 @@ Saída JSON esperada:
 `;
 }
 
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const RETRY_DELAYS_MS = [1500, 4000];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
- * Resolves the Gemini model name to use, reading the optional GEMINI_MODEL secret
+ * Resolves the primary Gemini model name to use, reading the optional GEMINI_MODEL secret
  * with a fallback to 'gemini-3.8-flash'.
  */
 export function getGeminiModel(): string {
@@ -117,20 +124,96 @@ export function getGeminiModel(): string {
 }
 
 /**
+ * Resolves the secondary/fallback Gemini model name to use, reading the optional GEMINI_FALLBACK_MODEL secret
+ * with a default to 'gemini-3.7-flash'.
+ */
+export function getGeminiFallbackModel(): string {
+  return Deno.env.get('GEMINI_FALLBACK_MODEL')?.trim() || 'gemini-3.7-flash';
+}
+
+export interface GeneratedReportResult extends ReportBlocks {
+  modelUsed: string;
+}
+
+/**
+ * Low-level call to Gemini API with retries on transient errors (429, 500, 502, 503, 504).
+ * Retries up to 2 times with increasing backoff (1.5s, 4s).
+ */
+export async function callGeminiModel(
+  model: string,
+  apiKey: string,
+  requestBody: unknown
+): Promise<{ text: string; model: string }> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  let lastStatus = 0;
+  let lastErrorText = '';
+
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!rawText) {
+          throw new Error('Gemini API returned an empty response.');
+        }
+        return { text: rawText, model };
+      }
+
+      lastStatus = response.status;
+      lastErrorText = await response.text();
+      console.error(
+        `[gemini] API Error for model ${model} (HTTP ${lastStatus}): ${lastErrorText}`
+      );
+
+      // If not a retryable status (e.g. 400, 404, 401, 403), stop retrying this model immediately
+      if (!RETRYABLE_STATUSES.has(lastStatus)) {
+        break;
+      }
+
+      // If retryable and we have attempts remaining, wait before next attempt
+      if (attempt < RETRY_DELAYS_MS.length) {
+        const delay = RETRY_DELAYS_MS[attempt];
+        console.warn(
+          `[gemini] Model ${model} returned HTTP ${lastStatus}. Retrying attempt ${attempt + 1}/${RETRY_DELAYS_MS.length} in ${delay}ms...`
+        );
+        await sleep(delay);
+      }
+    } catch (fetchErr: unknown) {
+      const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      lastErrorText = msg;
+      console.error(`[gemini] Network/fetch error for model ${model}: ${msg}`);
+      if (attempt < RETRY_DELAYS_MS.length) {
+        await sleep(RETRY_DELAYS_MS[attempt]);
+      }
+    }
+  }
+
+  throw new Error(
+    `Gemini API Error for model ${model} (HTTP ${lastStatus}): ${lastErrorText}`
+  );
+}
+
+/**
  * Calls the Google Gemini API to generate the structured 3-block report.
+ * Tries the primary model with retries, then falls back to secondary model if primary fails.
  */
 export async function generateExecutiveReport(
   apiKey: string,
   options: GenerateReportOptions
-): Promise<ReportBlocks> {
+): Promise<GeneratedReportResult> {
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured in Supabase environment secrets.');
   }
 
-  // Primary model: configurable via GEMINI_MODEL secret, defaulting to gemini-3.8-flash
-  const model = getGeminiModel();
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
+  const primaryModel = getGeminiModel();
+  const fallbackModel = getGeminiFallbackModel();
   const systemInstruction = buildSystemInstruction(options.language, options.tone);
 
   // Prepare input payload summary for the prompt
@@ -198,34 +281,47 @@ ${JSON.stringify(promptData, null, 2)}
     },
   };
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody),
-  });
+  let callResult: { text: string; model: string };
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`[gemini] API Error (HTTP ${response.status}): ${errorText}`);
-    throw new Error(`Gemini API Error (HTTP ${response.status}): ${errorText}`);
-  }
+  try {
+    callResult = await callGeminiModel(primaryModel, apiKey, requestBody);
+  } catch (primaryErr: unknown) {
+    const primaryMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+    console.warn(
+      `[gemini] Primary model ${primaryModel} failed (${primaryMsg}). Attempting fallback model ${fallbackModel}...`
+    );
 
-  const result = await response.json();
-  const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (fallbackModel === primaryModel) {
+      throw primaryErr;
+    }
 
-  if (!rawText) {
-    throw new Error('Gemini API returned an empty response.');
+    try {
+      callResult = await callGeminiModel(fallbackModel, apiKey, requestBody);
+    } catch (fallbackErr: unknown) {
+      const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+      console.error(
+        `[gemini] Fallback model ${fallbackModel} also failed: ${fallbackMsg}`
+      );
+      throw new Error(
+        `All Gemini models failed. Primary (${primaryModel}): ${primaryMsg}. Fallback (${fallbackModel}): ${fallbackMsg}`
+      );
+    }
   }
 
   try {
-    const parsed: ReportBlocks = JSON.parse(rawText);
-    
+    const parsed: ReportBlocks = JSON.parse(callResult.text);
+
     // Validate that all 3 mandatory blocks exist
     if (!parsed.done || !parsed.blockers || !parsed.next_steps) {
       throw new Error('Gemini output missing one of the 3 required blocks (done, blockers, next_steps).');
     }
 
-    return parsed;
+    return {
+      done: parsed.done,
+      blockers: parsed.blockers,
+      next_steps: parsed.next_steps,
+      modelUsed: callResult.model,
+    };
   } catch (err) {
     throw new Error(`Failed to parse Gemini structured JSON: ${err instanceof Error ? err.message : String(err)}`);
   }

@@ -192,6 +192,7 @@ sequenceDiagram
 - Sensitive keys are never committed to git:
   - `GEMINI_API_KEY`: Stored in Supabase Vault / Edge Function Secrets.
   - `GEMINI_MODEL`: Optional model override stored in Edge Function Secrets. Defaults to `gemini-3.8-flash`. If Google deprecates or retires a model, set the new model name via `npx supabase secrets set GEMINI_MODEL="<new_model>"` without altering codebase.
+  - `GEMINI_FALLBACK_MODEL`: Optional secondary fallback model if the primary model is overloaded (HTTP 503) or rate limited (HTTP 429). Defaults to `gemini-3.7-flash`. The system retries transient errors up to 2 times with backoff before falling back to this model, and ultimately to raw formatted tasks if both models fail.
   - `RESEND_API_KEY`: Stored in Supabase Secrets.
   - `SUPABASE_SERVICE_ROLE_KEY`: Used only inside server-side Edge Functions.
   - `SCHEDULED_FUNCTION_SECRET`: Shared secret used by `pg_cron` / `pg_net` to trigger `/dispatch-scheduled-reports`. Set via `supabase secrets set SCHEDULED_FUNCTION_SECRET="<secret>"`.

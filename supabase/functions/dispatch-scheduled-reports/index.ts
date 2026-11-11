@@ -135,12 +135,13 @@ Deno.serve(async (req: Request) => {
 
         // Generate report via Gemini (with graceful fallback)
         let reportBlocks: { done: string; blockers: string; next_steps: string };
+        let modelUsed = 'fallback';
         let generatedWithoutAi = false;
         let aiErrorMessage: string | null = null;
 
         try {
           if (!geminiApiKey) throw new Error('GEMINI_API_KEY is not configured');
-          reportBlocks = await generateExecutiveReport(geminiApiKey, {
+          const aiResult = await generateExecutiveReport(geminiApiKey, {
             clientName: client.name,
             companyName: client.company_name,
             language: (client.language as 'pt' | 'en') ?? 'pt',
@@ -151,8 +152,11 @@ Deno.serve(async (req: Request) => {
               blocked: tasks.blocked,
             },
           });
+          reportBlocks = aiResult;
+          modelUsed = aiResult.modelUsed;
         } catch (aiErr: unknown) {
           generatedWithoutAi = true;
+          modelUsed = 'fallback';
           aiErrorMessage = aiErr instanceof Error ? aiErr.message : String(aiErr);
           console.warn(`[dispatch-scheduled-reports] Gemini unavailable for client ${client.id}, falling back:`, aiErrorMessage);
 
@@ -209,6 +213,7 @@ Deno.serve(async (req: Request) => {
           tasks: tasks.all,
           tasks_completed: tasks.done.length,
           tasks_planned: tasks.all.length,
+          model_used: modelUsed,
           generated_without_ai: generatedWithoutAi,
           ai_error: aiErrorMessage,
         };
