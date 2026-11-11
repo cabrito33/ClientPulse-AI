@@ -537,7 +537,7 @@ export default async function DashboardPage() {
       </section>
 
       <p className="mt-6 text-center text-[11px] text-muted-soft">
-        Todos os nomes, clientes e métricas nesta página são dados de demonstração.
+        ClientPulse AI · Relatórios semanais automatizados
       </p>
     </main>
   );

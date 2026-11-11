@@ -195,6 +195,7 @@ Deno.serve(async (req: Request) => {
         sent_at: now,
         email_delivery_id: emailResult.id,
         is_mock_delivery: emailResult.mock,
+        mock: emailResult.mock,
         portal_url: `${appUrl.replace(/\/$/, '')}/portal?token=${client.portal_token}`,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

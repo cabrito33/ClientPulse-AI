@@ -779,13 +779,15 @@ export async function recordSprintMetric(data: {
 export async function approveAndSend(
   id: string,
   editedBody: string,
-): Promise<Report> {
+): Promise<{ report: Report; isMock: boolean }> {
   const sections = parseBodyToSections(editedBody);
 
-  await invokeEdgeFunction<{
+  const res = await invokeEdgeFunction<{
     success: boolean;
     report_id: string;
     status: string;
+    mock?: boolean;
+    is_mock_delivery?: boolean;
   }>("approve-and-send", {
     report_id: id,
     updated_blocks: sections
@@ -801,18 +803,22 @@ export async function approveAndSend(
   if (!updated) {
     throw new Error(`[api] Falha ao recuperar o relatório aprovado (${id})`);
   }
-  return updated;
+  return { report: updated, isMock: Boolean(res.mock || res.is_mock_delivery) };
 }
 
 /**
  * Retries sending an existing report via the approve-and-send Edge Function.
  * Reuses the existing 3 blocks stored in the report without modification.
  */
-export async function resendReport(id: string): Promise<Report> {
-  await invokeEdgeFunction<{
+export async function resendReport(
+  id: string,
+): Promise<{ report: Report; isMock: boolean }> {
+  const res = await invokeEdgeFunction<{
     success: boolean;
     report_id: string;
     status: string;
+    mock?: boolean;
+    is_mock_delivery?: boolean;
   }>("approve-and-send", {
     report_id: id,
   });
@@ -821,7 +827,7 @@ export async function resendReport(id: string): Promise<Report> {
   if (!updated) {
     throw new Error(`[api] Falha ao recuperar o relatório reenviado (${id})`);
   }
-  return updated;
+  return { report: updated, isMock: Boolean(res.mock || res.is_mock_delivery) };
 }
 
 /**
@@ -865,6 +871,24 @@ export async function updateClientColumnMapping(
 
   if (error) {
     throw new Error(`[api] updateClientColumnMapping: ${error.message}`);
+  }
+}
+
+/**
+ * Updates the auto_send_enabled flag for a client.
+ */
+export async function updateClientAutoSend(
+  clientId: string,
+  autoSendEnabled: boolean,
+): Promise<void> {
+  const supabase = await createClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.from("clients") as any)
+    .update({ auto_send_enabled: autoSendEnabled })
+    .eq("id", clientId);
+
+  if (error) {
+    throw new Error(`[api] updateClientAutoSend: ${error.message}`);
   }
 }
 

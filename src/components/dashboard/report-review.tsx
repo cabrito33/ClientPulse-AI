@@ -20,7 +20,11 @@ import { Badge } from "@/components/ui/badge";
 import { buttonClass } from "@/components/ui/button";
 import { cn, formatDateTime } from "@/lib/utils";
 import { parseBodyToSections } from "@/lib/report-utils";
-import { approveAndSendAction, resendReportAction } from "@/app/actions/reports";
+import {
+  approveAndSendAction,
+  resendReportAction,
+  toggleAutoSendAction,
+} from "@/app/actions/reports";
 
 /** Parses edited markdown, falling back to the stored sections. */
 function parseBodyFallback(body: string, fallback: ReportSection): ReportSection {
@@ -50,7 +54,8 @@ export function ReportReview({
     report.status === "sent" ? "sent" : report.status === "failed" ? "failed" : "pending"
   );
   const [autoSend, setAutoSend] = useState(client.autoSend);
-  const [toast, setToast] = useState<string | null>(null);
+  const [isUpdatingAutoSend, setIsUpdatingAutoSend] = useState(false);
+  const [toast, setToast] = useState<{ title: string; subtitle: string } | null>(null);
   const [error, setError] = useState<string | null>(report.errorMessage ?? null);
   const [isPending, startTransition] = useTransition();
 
@@ -84,7 +89,18 @@ export function ReportReview({
       const result = await approveAndSendAction(report.id, body);
       if (result.success) {
         setState("sent");
-        setToast(`Relatório aprovado e enviado para ${client.email}`);
+        if (result.isMock) {
+          setToast({
+            title: `Relatório aprovado (${client.email})`,
+            subtitle:
+              "Relatório aprovado. E-mail em modo de pré-visualização (sem RESEND_API_KEY), nada foi enviado.",
+          });
+        } else {
+          setToast({
+            title: `Relatório aprovado e enviado para ${client.email}`,
+            subtitle: "E-mail enviado com sucesso, com o link do portal.",
+          });
+        }
         router.refresh();
       } else {
         setState("failed");
@@ -99,7 +115,18 @@ export function ReportReview({
       const result = await resendReportAction(report.id);
       if (result.success) {
         setState("sent");
-        setToast(`Relatório reenviado com sucesso para ${client.email}!`);
+        if (result.isMock) {
+          setToast({
+            title: `Relatório reenviado (${client.email})`,
+            subtitle:
+              "Relatório aprovado. E-mail em modo de pré-visualização (sem RESEND_API_KEY), nada foi enviado.",
+          });
+        } else {
+          setToast({
+            title: `Relatório reenviado com sucesso para ${client.email}`,
+            subtitle: "E-mail enviado com sucesso, com o link do portal.",
+          });
+        }
         router.refresh();
       } else {
         setState("failed");
@@ -109,9 +136,27 @@ export function ReportReview({
   }
 
   function approveWithCopy() {
-    setState("sent");
-    setToast(`Relatório aprovado — registo guardado. E-mail simulado para ${client.email}.`);
-    startTransition(() => router.refresh());
+    approve();
+  }
+
+  async function handleToggleAutoSend() {
+    const nextVal = !autoSend;
+    setAutoSend(nextVal);
+    setIsUpdatingAutoSend(true);
+    try {
+      const res = await toggleAutoSendAction(client.id, nextVal);
+      if (!res.success) {
+        setAutoSend(!nextVal); // Reverter se falhar
+        setError(res.error);
+      } else {
+        router.refresh();
+      }
+    } catch (err: unknown) {
+      setAutoSend(!nextVal);
+      setError(err instanceof Error ? err.message : "Erro ao alterar envio automático.");
+    } finally {
+      setIsUpdatingAutoSend(false);
+    }
   }
 
   return (
@@ -273,9 +318,9 @@ export function ReportReview({
         >
           <Check className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <div className="flex-1">
-            <p className="font-medium">{toast}</p>
+            <p className="font-medium">{toast.title}</p>
             <p className="mt-0.5 text-[11.5px] text-teal/80">
-              Envio simulado — nenhum e-mail real foi enviado neste protótipo.
+              {toast.subtitle}
             </p>
           </div>
           <button
@@ -381,11 +426,13 @@ export function ReportReview({
                 type="button"
                 role="switch"
                 aria-checked={autoSend}
+                disabled={isUpdatingAutoSend}
                 aria-label="Envio automático sem aprovação"
-                onClick={() => setAutoSend((v) => !v)}
+                onClick={handleToggleAutoSend}
                 className={cn(
                   "relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors",
                   autoSend ? "border-accent bg-accent" : "border-line-strong bg-sand",
+                  isUpdatingAutoSend && "opacity-60 cursor-not-allowed",
                 )}
               >
                 <span
@@ -404,7 +451,7 @@ export function ReportReview({
               )}
             >
               {autoSend
-                ? "Ligado: os próximos relatórios deste cliente seguem sem revisão. Esta alteração é apenas visual no protótipo."
+                ? "Ligado: os próximos relatórios deste cliente seguem sem revisão."
                 : "Desligado: cada rascunho espera pela tua aprovação. Recomendado."}
             </p>
           </section>
