@@ -301,11 +301,16 @@ function buildWeekLabel(start: string, end: string): string {
 
 /** Returns the ISO week number (1-53) for a YYYY-MM-DD string. */
 function isoWeekNumber(dateStr: string): number {
-  const d = new Date(dateStr + "T12:00:00Z");
-  const jan4 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
-  const startOfWeek1 =
-    jan4.getTime() - (jan4.getUTCDay() || 7) * 86400000 + 86400000;
-  return Math.ceil((d.getTime() - startOfWeek1) / (7 * 86400000)) + 1;
+  const d = new Date(dateStr + (dateStr.includes("T") ? "" : "T12:00:00Z"));
+  const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const dayNr = (target.getUTCDay() + 6) % 7;
+  target.setUTCDate(target.getUTCDate() - dayNr + 3);
+  const firstThursday = target.getTime();
+  target.setUTCMonth(0, 1);
+  if (target.getUTCDay() !== 4) {
+    target.setUTCMonth(0, 1 + ((4 - target.getUTCDay() + 7) % 7));
+  }
+  return 1 + Math.ceil((firstThursday - target.getTime()) / 604800000);
 }
 
 /** Extracts task counts from the raw GitHub JSON blob. */
@@ -636,13 +641,53 @@ export async function getSprintMetrics(clientId: string): Promise<SprintMetric[]
   }
 
   let rows = (result.data as SprintMetricRow[] | null) ?? [];
+  const nowIsoWeek = isoWeekNumber(new Date().toISOString().split("T")[0]);
+
+  // Clean up any stray future sprints (e.g. S47 when current is S46)
+  const futureRows = rows.filter((r) => {
+    const m = r.sprint.match(/^S?(\d+)$/i);
+    return m && parseInt(m[1], 10) > nowIsoWeek;
+  });
+
+  if (futureRows.length > 0 && isUUID(clientId)) {
+    try {
+      await supabase
+        .from("sprint_metrics")
+        .delete()
+        .eq("client_id", clientId)
+        .in(
+          "sprint",
+          futureRows.map((r) => r.sprint)
+        );
+    } catch {
+      // Ignored
+    }
+  }
+
+  // Filter out any future weeks
+  rows = rows.filter((r) => {
+    const m = r.sprint.match(/^S?(\d+)$/i);
+    return !m || parseInt(m[1], 10) <= nowIsoWeek;
+  });
 
   // Auto-backfill if client has reports but no sprint_metrics yet
   if (rows.length === 0 && isUUID(clientId)) {
     rows = await syncSprintMetricsFromReports(clientId);
   }
 
-  return rows.map(mapSprintMetric);
+  // Deduplicate by sprint
+  const uniqueMap = new Map<string, SprintMetricRow>();
+  for (const r of rows) {
+    uniqueMap.set(r.sprint, r);
+  }
+
+  const finalRows = Array.from(uniqueMap.values()).sort((a, b) => {
+    const na = parseInt(a.sprint.replace(/\D/g, "") || "0", 10);
+    const nb = parseInt(b.sprint.replace(/\D/g, "") || "0", 10);
+    return na - nb;
+  });
+
+  return finalRows.map(mapSprintMetric);
 }
 
 /**
@@ -685,17 +730,25 @@ export async function syncSprintMetricsFromReports(
 
   if (error || !reports || reports.length === 0) return [];
 
-  const metricsToUpsert: {
-    client_id: string;
-    agency_id: string;
-    sprint: string;
-    label: string;
-    completed: number;
-    planned: number;
-  }[] = [];
+  const nowIsoWeek = isoWeekNumber(new Date().toISOString().split("T")[0]);
+  const metricsBySprint = new Map<
+    string,
+    {
+      client_id: string;
+      agency_id: string;
+      sprint: string;
+      label: string;
+      completed: number;
+      planned: number;
+    }
+  >();
 
   for (const r of reports as ReportRow[]) {
-    const weekNum = isoWeekNumber(r.period_end);
+    const dateToCheck = r.period_end || r.period_start || r.created_at;
+    const weekNum = isoWeekNumber(dateToCheck);
+    // Do not count future weeks
+    if (weekNum > nowIsoWeek) continue;
+
     const sprint = `S${weekNum}`;
     const label = `Semana ${weekNum}`;
     const counts = extractTaskCounts(r.raw_github_data);
@@ -708,7 +761,8 @@ export async function syncSprintMetricsFromReports(
       planned = completed;
     }
 
-    metricsToUpsert.push({
+    // Overwrite so that duplicate drafts in the same week do not create multiple weeks
+    metricsBySprint.set(sprint, {
       client_id: r.client_id,
       agency_id: r.agency_id,
       sprint,
@@ -717,6 +771,8 @@ export async function syncSprintMetricsFromReports(
       planned,
     });
   }
+
+  const metricsToUpsert = Array.from(metricsBySprint.values());
 
   if (metricsToUpsert.length > 0) {
     try {
@@ -735,7 +791,15 @@ export async function syncSprintMetricsFromReports(
     .eq("client_id", clientId)
     .order("sprint");
 
-  return (result.data as SprintMetricRow[] | null) ?? [];
+  let finalRows = (result.data as SprintMetricRow[] | null) ?? [];
+
+  // Filter out any future weeks
+  finalRows = finalRows.filter((r) => {
+    const m = r.sprint.match(/^S?(\d+)$/i);
+    return !m || parseInt(m[1], 10) <= nowIsoWeek;
+  });
+
+  return finalRows;
 }
 
 /**

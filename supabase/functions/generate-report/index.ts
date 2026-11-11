@@ -264,14 +264,18 @@ Deno.serve(async (req: Request) => {
     }
 
     // 11. Calculate and Save/Upsert Sprint Metrics for this period
-    const d = new Date(periodEndStr + 'T12:00:00Z');
-    const jan4 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
-    const startOfWeek1 = jan4.getTime() - (jan4.getUTCDay() || 7) * 86400000 + 86400000;
-    const weekNum = Math.ceil((d.getTime() - startOfWeek1) / (7 * 86400000)) + 1;
+    const weekNum = currentIso.week;
     const sprintCode = `S${weekNum}`;
     const sprintLabel = `Semana ${weekNum}`;
     const completedCount = tasks.done.length;
     const plannedCount = tasks.all.length;
+
+    // Remove any erroneous future sprint metrics for this client
+    await supabase
+      .from('sprint_metrics')
+      .delete()
+      .eq('client_id', client.id)
+      .gt('sprint', sprintCode);
 
     await supabase.from('sprint_metrics').upsert({
       client_id: client.id,
