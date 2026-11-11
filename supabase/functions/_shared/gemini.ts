@@ -109,6 +109,14 @@ Saída JSON esperada:
 }
 
 /**
+ * Resolves the Gemini model name to use, reading the optional GEMINI_MODEL secret
+ * with a fallback to 'gemini-3.8-flash'.
+ */
+export function getGeminiModel(): string {
+  return Deno.env.get('GEMINI_MODEL')?.trim() || 'gemini-3.8-flash';
+}
+
+/**
  * Calls the Google Gemini API to generate the structured 3-block report.
  */
 export async function generateExecutiveReport(
@@ -119,8 +127,8 @@ export async function generateExecutiveReport(
     throw new Error('GEMINI_API_KEY is not configured in Supabase environment secrets.');
   }
 
-  // Primary model: gemini-2.5-flash (fast, high precision, cost-free in AI Studio)
-  const model = 'gemini-2.5-flash';
+  // Primary model: configurable via GEMINI_MODEL secret, defaulting to gemini-3.8-flash
+  const model = getGeminiModel();
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const systemInstruction = buildSystemInstruction(options.language, options.tone);
@@ -198,6 +206,7 @@ ${JSON.stringify(promptData, null, 2)}
 
   if (!response.ok) {
     const errorText = await response.text();
+    console.error(`[gemini] API Error (HTTP ${response.status}): ${errorText}`);
     throw new Error(`Gemini API Error (HTTP ${response.status}): ${errorText}`);
   }
 

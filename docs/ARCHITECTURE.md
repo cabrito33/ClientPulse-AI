@@ -191,6 +191,7 @@ sequenceDiagram
 ### 5.4 Secret & Credential Management
 - Sensitive keys are never committed to git:
   - `GEMINI_API_KEY`: Stored in Supabase Vault / Edge Function Secrets.
+  - `GEMINI_MODEL`: Optional model override stored in Edge Function Secrets. Defaults to `gemini-3.8-flash`. If Google deprecates or retires a model, set the new model name via `npx supabase secrets set GEMINI_MODEL="<new_model>"` without altering codebase.
   - `RESEND_API_KEY`: Stored in Supabase Secrets.
   - `SUPABASE_SERVICE_ROLE_KEY`: Used only inside server-side Edge Functions.
   - `SCHEDULED_FUNCTION_SECRET`: Shared secret used by `pg_cron` / `pg_net` to trigger `/dispatch-scheduled-reports`. Set via `supabase secrets set SCHEDULED_FUNCTION_SECRET="<secret>"`.
@@ -263,7 +264,7 @@ Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.s
 
 | Risk | Impact | Probability | Mitigation Strategy |
 | :--- | :--- | :--- | :--- |
-| **Gemini Hallucinations or Schema Deviation** | Reports contain invented tasks or invalid formatting. | Medium | Use Gemini 2.5 Flash with structured output schemas (`responseSchema: { type: "object", properties: {...} }`). Set `temperature: 0.2` and inject strict system instructions: *"Only summarize tasks present in the input JSON. Never invent features or milestones."* |
+| **Gemini Hallucinations or Schema Deviation** | Reports contain invented tasks or invalid formatting. | Medium | Use Gemini Flash (default: `gemini-3.8-flash`, configurable via `GEMINI_MODEL`) with structured output schemas (`responseSchema: { type: "OBJECT", properties: {...} }`). Set `temperature: 0.2` and inject strict system instructions: *"Only summarize tasks present in the input JSON. Never invent features or milestones."* |
 | **Resend Free-Tier Domain Limits** | Cannot send emails to external client domains during testing. | High | Implement a **Mock/Preview Mode** in `resend.ts`: when running in development or without a custom domain, log the rendered email HTML to Supabase Studio or send only to the developer's registered email (`onboarding@resend.dev`). |
 | **GitHub GraphQL API Quota & Changes** | GraphQL queries fail or rate-limit the agency account. | Low | Query only necessary fields (`title`, `state`, `assignees`, `labels`, `updatedAt`, `closedAt`) with pagination limits (`first: 100`). Cache raw responses in `reports.raw_github_data`. |
 | **`pg_cron` UTC Scheduling Offsets** | Reports generate at the wrong hour due to timezone differences. | Medium | Store all schedule definitions with an explicit UTC hour (`schedule_hour_utc: 9`). Document for the user that 09:00 UTC corresponds to 10:00 Lisbon/London time (or 09:00 WET). |

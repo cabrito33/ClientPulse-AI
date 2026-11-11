@@ -25,6 +25,7 @@ import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { createUserClient, getAuthenticatedUser } from '../_shared/supabaseClient.ts';
 import { testGitHubToken } from '../_shared/github.ts';
 import { encryptPat } from '../_shared/crypto.ts';
+import { getGeminiModel } from '../_shared/gemini.ts';
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'model';
@@ -172,7 +173,7 @@ LANGUAGE:
     });
 
     const geminiApiKey = Deno.env.get('GEMINI_API_KEY') ?? '';
-    const model = 'gemini-2.5-flash';
+    const model = getGeminiModel();
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`;
 
     // 7. Invoke Gemini API
@@ -194,6 +195,7 @@ LANGUAGE:
 
     if (!geminiResponse.ok) {
       const errText = await geminiResponse.text();
+      console.error(`[gemini] API Error (HTTP ${geminiResponse.status}): ${errText}`);
       throw new Error(`Gemini Chat Error (HTTP ${geminiResponse.status}): ${errText}`);
     }
 
