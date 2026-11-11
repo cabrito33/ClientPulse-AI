@@ -54,7 +54,7 @@ export async function invokeEdgeFunction<T = unknown>(
 
   // 3. Setup timeout controller
   const controller = new AbortController();
-  const timeoutMs = options?.timeoutMs ?? 30000;
+  const timeoutMs = options?.timeoutMs ?? 60000;
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {

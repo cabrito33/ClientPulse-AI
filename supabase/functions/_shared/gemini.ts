@@ -155,6 +155,7 @@ export async function callGeminiModel(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
+        signal: AbortSignal.timeout(25000),
       });
 
       if (response.ok) {
@@ -259,6 +260,7 @@ ${JSON.stringify(promptData, null, 2)}
     generationConfig: {
       temperature: 0.2, // Low temperature for high factual accuracy
       topP: 0.8,
+      maxOutputTokens: 2048,
       responseMimeType: 'application/json',
       responseSchema: {
         type: 'OBJECT',

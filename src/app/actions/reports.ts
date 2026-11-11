@@ -1,5 +1,7 @@
 "use server";
 
+export const maxDuration = 90;
+
 import { revalidatePath } from "next/cache";
 import {
   approveAndSend,

@@ -1,5 +1,7 @@
 "use server";
 
+export const maxDuration = 90;
+
 import { invokeEdgeFunction } from "@/lib/edge";
 import { createClient } from "@/lib/supabase/server";
 
@@ -284,6 +286,9 @@ export async function completeOnboardingAction(
         {
           client_id: clientId,
           period_days: 7,
+        },
+        {
+          timeoutMs: 90000,
         }
       );
       if (res?.report_id) {

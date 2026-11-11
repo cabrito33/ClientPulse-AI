@@ -908,22 +908,55 @@ export async function generateReportOnDemand(
   clientId: string,
   customNotes?: string,
 ): Promise<{ reportId: string }> {
-  const res = await invokeEdgeFunction<{
-    success: boolean;
-    report_id: string;
-    client_id: string;
-    status: string;
-  }>("generate-report", {
-    client_id: clientId,
-    custom_notes: customNotes,
-    period_days: 7,
-  });
+  try {
+    const res = await invokeEdgeFunction<{
+      success: boolean;
+      report_id: string;
+      client_id: string;
+      status: string;
+    }>(
+      "generate-report",
+      {
+        client_id: clientId,
+        custom_notes: customNotes,
+        period_days: 7,
+      },
+      {
+        timeoutMs: 90000,
+      },
+    );
 
-  if (!res.report_id) {
-    throw new Error("O servidor não devolveu o identificador do relatório gerado.");
+    if (!res.report_id) {
+      throw new Error("O servidor não devolveu o identificador do relatório gerado.");
+    }
+
+    return { reportId: res.report_id };
+  } catch (err: unknown) {
+    // Verificação de contingência: se a ligação esgotou o tempo mas a função gravou o rascunho na BD
+    try {
+      const supabase = await createClient();
+      const { data: recentDraft } = await supabase
+        .from("reports")
+        .select("*")
+        .eq("client_id", clientId)
+        .eq("status", "draft")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (recentDraft) {
+        const draft = recentDraft as Tables<"reports">;
+        const draftDate = new Date(draft.updated_at || draft.created_at).getTime();
+        if (Date.now() - draftDate < 120000) {
+          return { reportId: draft.id };
+        }
+      }
+    } catch {
+      // Ignora erro de contingência e lança o erro original
+    }
+
+    throw err;
   }
-
-  return { reportId: res.report_id };
 }
 
 /**

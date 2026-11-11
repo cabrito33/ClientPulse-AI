@@ -244,7 +244,6 @@ export async function fetchBoardTasks(
                   id
                   number
                   title
-                  body
                   state
                   closedAt
                   updatedAt
@@ -264,7 +263,6 @@ export async function fetchBoardTasks(
                   id
                   number
                   title
-                  body
                   state
                   closedAt
                   updatedAt
@@ -278,7 +276,6 @@ export async function fetchBoardTasks(
                 ... on DraftIssue {
                   id
                   title
-                  body
                   updatedAt
                 }
               }
@@ -298,7 +295,6 @@ export async function fetchBoardTasks(
       id?: string;
       number?: number;
       title?: string;
-      body?: string;
       state?: string;
       closedAt?: string | null;
       updatedAt?: string;
