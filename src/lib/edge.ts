@@ -169,10 +169,45 @@ function handleMockEdgeInvocation<T>(functionName: string, body: unknown): T {
   }
 
   if (functionName === "github-sync") {
+    const action = (payload as { action?: string }).action;
+    if (action === "list-projects") {
+      return {
+        owner: (payload as { owner?: string }).owner || "demo-agency",
+        owner_type: "user",
+        projects: [
+          {
+            id: "PVT_proj_1",
+            number: 1,
+            title: "Website 2026 — Atelier Mira",
+            closed: false,
+            url: "https://github.com/users/demo/projects/1",
+          },
+          {
+            id: "PVT_proj_2",
+            number: 2,
+            title: "Portal do Paciente — Fase 2",
+            closed: false,
+            url: "https://github.com/users/demo/projects/2",
+          },
+        ],
+      } as T;
+    }
+    if (action === "fetch-columns") {
+      return {
+        projectId: (payload as { project_id?: string }).project_id || "PVT_proj_1",
+        projectTitle: "Website 2026 — Atelier Mira",
+        columns: [
+          { id: "c1", name: "Backlog", color: "GRAY" },
+          { id: "c2", name: "Em curso", color: "YELLOW" },
+          { id: "c3", name: "Bloqueado", color: "RED" },
+          { id: "c4", name: "Concluído", color: "GREEN" },
+        ],
+      } as T;
+    }
     return {
       success: true,
       projects: [],
-      columns: ["A Fazer", "Em Curso", "Concluído"],
+      columns: ["Backlog", "Em curso", "Bloqueado", "Concluído"],
     } as T;
   }
 

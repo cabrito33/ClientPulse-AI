@@ -143,14 +143,17 @@ Deno.serve(async (req: Request) => {
       // Action: list-projects
       // ------------------------------------------------------------------------
       case 'list-projects': {
-        if (!owner) {
-          return new Response(
-            JSON.stringify({ error: "Missing 'owner' (GitHub organization or username)." }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
+        let projectOwner = owner ? String(owner).trim() : null;
+        let projectOwnerType: 'user' | 'organization' = owner_type === 'organization' ? 'organization' : 'user';
+
+        if (!projectOwner) {
+          const ghUser = await testGitHubToken(token);
+          projectOwner = ghUser.username;
+          projectOwnerType = 'user';
         }
-        const projects = await listProjects(token, owner, owner_type ?? 'user');
-        return new Response(JSON.stringify({ owner, owner_type: owner_type ?? 'user', projects }), {
+
+        const projects = await listProjects(token, projectOwner, projectOwnerType);
+        return new Response(JSON.stringify({ owner: projectOwner, owner_type: projectOwnerType, projects }), {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });

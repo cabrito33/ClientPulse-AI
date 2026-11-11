@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
   Bot,
@@ -15,7 +15,14 @@ import {
   Send,
   Loader2,
 } from "lucide-react";
-import { sendOnboardingMessageAction, type OnboardingChatMessage } from "@/app/actions/onboarding";
+import {
+  sendOnboardingMessageAction,
+  listGitHubProjectsAction,
+  fetchProjectColumnsAction,
+  checkGitHubIntegrationStatusAction,
+  completeOnboardingAction,
+  type OnboardingChatMessage,
+} from "@/app/actions/onboarding";
 
 function GithubMark({ className }: { className?: string }) {
   return (
@@ -24,7 +31,6 @@ function GithubMark({ className }: { className?: string }) {
     </svg>
   );
 }
-import { demoProjects } from "@/lib/github";
 import { Badge } from "@/components/ui/badge";
 import { buttonClass } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
@@ -32,9 +38,24 @@ import { cn } from "@/lib/utils";
 
 type Step = 1 | 2 | 3 | 4;
 
+interface OnboardingProject {
+  id: string;
+  number?: number;
+  title: string;
+  columns: string[];
+}
+
 export default function OnboardingPage() {
   const [step, setStep] = useState<Step>(1);
-  const [selectedProject, setSelectedProject] = useState(demoProjects[0]);
+  const [projects, setProjects] = useState<OnboardingProject[]>([]);
+  const [selectedProject, setSelectedProject] = useState<OnboardingProject | null>(null);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
+  const [isLoadingColumns, setIsLoadingColumns] = useState(false);
+  const [projectsError, setProjectsError] = useState<string | null>(null);
+  const [createdReportId, setCreatedReportId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   const [columnMap, setColumnMap] = useState({
     done: "Concluído",
     in_progress: "Em curso",
@@ -60,6 +81,109 @@ export default function OnboardingPage() {
   const [chatError, setChatError] = useState<string | null>(null);
   const [githubConnected, setGithubConnected] = useState(false);
   const [githubUsername, setGithubUsername] = useState<string | null>(null);
+
+  const handleSelectProject = useCallback(async (proj: OnboardingProject) => {
+    setSelectedProject(proj);
+    if (proj.columns && proj.columns.length > 0) {
+      return;
+    }
+    setIsLoadingColumns(true);
+    try {
+      const colRes = await fetchProjectColumnsAction(proj.id);
+      if (colRes.success && colRes.columns.length > 0) {
+        const cols = colRes.columns;
+        proj.columns = cols;
+        setProjects((prev) =>
+          prev.map((p) => (p.id === proj.id ? { ...p, columns: cols } : p))
+        );
+        setSelectedProject((curr) =>
+          curr && curr.id === proj.id ? { ...curr, columns: cols } : curr
+        );
+
+        // Auto-mapping inteligente de colunas
+        const lowerCols = cols.map((c) => ({ raw: c, low: c.toLowerCase() }));
+        const doneMatch =
+          lowerCols.find((c) =>
+            /done|conclu|pronto|terminad|entregue/i.test(c.low)
+          )?.raw || cols[cols.length - 1];
+
+        const inProgMatch =
+          lowerCols.find((c) =>
+            /progress|curso|desenvolv|fazendo|fazer/i.test(c.low)
+          )?.raw || cols[Math.min(1, cols.length - 1)];
+
+        const blockMatch =
+          lowerCols.find((c) =>
+            /block|bloque|imped|paus/i.test(c.low)
+          )?.raw || cols[0];
+
+        setColumnMap({
+          done: doneMatch,
+          in_progress: inProgMatch,
+          blocked: blockMatch,
+        });
+      }
+    } catch (err) {
+      console.error("Erro ao carregar colunas:", err);
+    } finally {
+      setIsLoadingColumns(false);
+    }
+  }, []);
+
+  const loadProjects = useCallback(
+    async (owner?: string) => {
+      setIsLoadingProjects(true);
+      setProjectsError(null);
+      try {
+        const res = await listGitHubProjectsAction(owner);
+        if (res.success && res.projects) {
+          if (res.projects.length === 0) {
+            setProjects([]);
+            setSelectedProject(null);
+            setProjectsError(
+              "Nenhum board encontrado nesta conta GitHub. Certifica-te de que tens um GitHub Project (v2) ativo e que o token tem permissões."
+            );
+          } else {
+            const mapped: OnboardingProject[] = res.projects.map((p) => ({
+              id: p.id,
+              number: p.number,
+              title: p.title,
+              columns: [],
+            }));
+            setProjects(mapped);
+            handleSelectProject(mapped[0]);
+          }
+        } else if (!res.success) {
+          setProjectsError(res.error);
+        }
+      } catch (err: unknown) {
+        setProjectsError(
+          err instanceof Error ? err.message : "Erro ao carregar projetos do GitHub."
+        );
+      } finally {
+        setIsLoadingProjects(false);
+      }
+    },
+    [handleSelectProject]
+  );
+
+  useEffect(() => {
+    async function initCheck() {
+      try {
+        const status = await checkGitHubIntegrationStatusAction();
+        if (status.isConnected) {
+          setGithubConnected(true);
+          if (status.username) {
+            setGithubUsername(status.username);
+          }
+          await loadProjects(status.username || undefined);
+        }
+      } catch (err) {
+        console.warn("Erro ao verificar integração:", err);
+      }
+    }
+    initCheck();
+  }, [loadProjects]);
 
   async function handleSendMessage(e: React.FormEvent) {
     e.preventDefault();
@@ -91,15 +215,16 @@ export default function OnboardingPage() {
 
         if (res.data.github_status?.is_connected) {
           setGithubConnected(true);
-          if (res.data.github_status.username) {
-            setGithubUsername(res.data.github_status.username);
-          }
+          const u = res.data.github_status.username || undefined;
+          if (u) setGithubUsername(u);
+          loadProjects(u);
         }
 
         if (res.data.action_detected?.action === "pat_validated") {
           setGithubConnected(true);
-          const u = res.data.action_detected.data?.username as string | undefined;
+          const u = (res.data.action_detected.data?.username as string) || undefined;
           if (u) setGithubUsername(u);
+          loadProjects(u);
         }
       } else {
         const err = !res.success ? res.error : "Não foi possível obter resposta.";
@@ -109,6 +234,41 @@ export default function OnboardingPage() {
       setChatError(err instanceof Error ? err.message : "Erro ao enviar mensagem.");
     } finally {
       setIsChatLoading(false);
+    }
+  }
+
+  async function handleFinishStep3() {
+    if (!selectedProject) {
+      setSubmitError("Por favor seleciona um board do GitHub no Passo 1.");
+      return;
+    }
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      const res = await completeOnboardingAction({
+        clientName: clientData.name,
+        clientEmail: clientData.email,
+        projectId: selectedProject.id,
+        projectOwner: githubUsername || "default",
+        tone: clientData.tone as "formal" | "executivo" | "descontraido",
+        language: clientData.language as "pt" | "en",
+        columnMapping: columnMap,
+      });
+
+      if (res.success) {
+        if (res.reportId) {
+          setCreatedReportId(res.reportId);
+        }
+        setStep(4);
+      } else {
+        setSubmitError(res.error);
+      }
+    } catch (err: unknown) {
+      setSubmitError(
+        err instanceof Error ? err.message : "Erro ao concluir configuração."
+      );
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -301,48 +461,96 @@ export default function OnboardingPage() {
               </div>
             )}
 
-            <div className="mt-6 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-soft">
-                Seleciona um dos teus boards disponíveis:
-              </p>
-              {demoProjects.map((p) => (
-                <div
-                  key={p.id}
-                  onClick={() => setSelectedProject(p)}
-                  className={cn(
-                    "cursor-pointer rounded-xl border p-4 transition-all",
-                    selectedProject.id === p.id
-                      ? "border-accent bg-accent-soft/30 shadow-sm"
-                      : "border-line bg-paper/40 hover:border-line-strong hover:bg-sand/40",
-                  )}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-ink">{p.title}</p>
-                      <p className="mt-1 text-xs text-muted">
-                        Colunas detetadas: {p.columns.join(" · ")}
-                      </p>
+            {isLoadingProjects ? (
+              <div className="mt-8 flex flex-col items-center justify-center rounded-2xl border border-line bg-paper/30 p-12 text-center">
+                <Loader2 className="h-6 w-6 animate-spin text-accent" />
+                <p className="mt-3 text-sm font-medium text-ink">
+                  A carregar os teus boards do GitHub Projects...
+                </p>
+                <p className="mt-1 text-xs text-muted">
+                  A sincronizar projetos da tua conta através da API GraphQL.
+                </p>
+              </div>
+            ) : projects.length > 0 ? (
+              <div className="mt-6 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-soft">
+                  Seleciona um dos teus boards disponíveis:
+                </p>
+                {projects.map((p) => {
+                  const isSelected = selectedProject?.id === p.id;
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => handleSelectProject(p)}
+                      className={cn(
+                        "cursor-pointer rounded-xl border p-4 transition-all",
+                        isSelected
+                          ? "border-accent bg-accent-soft/30 shadow-sm"
+                          : "border-line bg-paper/40 hover:border-line-strong hover:bg-sand/40",
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-ink">
+                            {p.title}
+                            {p.number ? ` (#${p.number})` : ""}
+                          </p>
+                          <p className="mt-1 text-xs text-muted">
+                            {isSelected && isLoadingColumns
+                              ? "A carregar colunas do board..."
+                              : p.columns && p.columns.length > 0
+                              ? `Colunas detetadas: ${p.columns.join(" · ")}`
+                              : "Clica para detetar colunas de status"}
+                          </p>
+                        </div>
+                        {isSelected ? (
+                          <span className="grid h-6 w-6 place-items-center rounded-full bg-accent text-white">
+                            <Check className="h-3.5 w-3.5" />
+                          </span>
+                        ) : (
+                          <span className="h-6 w-6 rounded-full border border-line-strong" />
+                        )}
+                      </div>
                     </div>
-                    {selectedProject.id === p.id ? (
-                      <span className="grid h-6 w-6 place-items-center rounded-full bg-accent text-white">
-                        <Check className="h-3.5 w-3.5" />
-                      </span>
-                    ) : (
-                      <span className="h-6 w-6 rounded-full border border-line-strong" />
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="mt-6 rounded-xl border border-line bg-paper/50 p-6 text-center">
+                <p className="text-sm text-ink-soft">
+                  {projectsError ||
+                    "Ainda não detetámos boards do GitHub. Cola o teu Personal Access Token (PAT) no PulseBot acima para listar os teus projetos."}
+                </p>
+                {githubConnected && (
+                  <button
+                    type="button"
+                    onClick={() => loadProjects(githubUsername || undefined)}
+                    className={cn(buttonClass("secondary", "sm"), "mt-3")}
+                  >
+                    Tentar carregar projetos novamente
+                  </button>
+                )}
+              </div>
+            )}
 
             <div className="mt-8 flex justify-end">
               <button
                 type="button"
+                disabled={!selectedProject || isLoadingColumns || isLoadingProjects}
                 onClick={() => setStep(2)}
                 className={buttonClass("primary", "md")}
               >
-                Continuar
-                <ArrowRight className="h-4 w-4" />
+                {isLoadingColumns ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    A carregar colunas...
+                  </>
+                ) : (
+                  <>
+                    Continuar
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -356,70 +564,77 @@ export default function OnboardingPage() {
               2. Mapeamento de Colunas do Board
             </h2>
             <p className="mt-1 text-xs text-muted">
-              Associa as colunas do projeto «{selectedProject.title}» aos estados do ClientPulse.
+              Associa as colunas do projeto «{selectedProject?.title || "Projeto GitHub"}» aos estados do ClientPulse.
             </p>
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-3">
-              <div className="rounded-xl border border-teal/30 bg-teal-soft/20 p-4">
-                <label className="text-xs font-semibold uppercase tracking-wider text-teal">
-                  Tarefas Concluídas
-                </label>
-                <select
-                  value={columnMap.done}
-                  onChange={(e) => setColumnMap({ ...columnMap, done: e.target.value })}
-                  className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-teal"
-                >
-                  {selectedProject.columns.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-2 text-[11px] text-muted">
-                  Tarefas para «O que foi feito».
-                </p>
+            {isLoadingColumns ? (
+              <div className="mt-8 flex items-center justify-center p-8">
+                <Loader2 className="h-5 w-5 animate-spin text-accent" />
+                <span className="ml-2 text-xs text-muted">A ler estados do GitHub Projects...</span>
               </div>
+            ) : (
+              <div className="mt-6 grid gap-4 sm:grid-cols-3">
+                <div className="rounded-xl border border-teal/30 bg-teal-soft/20 p-4">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-teal">
+                    Tarefas Concluídas
+                  </label>
+                  <select
+                    value={columnMap.done}
+                    onChange={(e) => setColumnMap({ ...columnMap, done: e.target.value })}
+                    className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-teal"
+                  >
+                    {(selectedProject?.columns?.length ? selectedProject.columns : [columnMap.done]).map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-[11px] text-muted">
+                    Tarefas para «O que foi feito».
+                  </p>
+                </div>
 
-              <div className="rounded-xl border border-gold/40 bg-gold-soft/20 p-4">
-                <label className="text-xs font-semibold uppercase tracking-wider text-[#8a5c00]">
-                  Tarefas Em Curso
-                </label>
-                <select
-                  value={columnMap.in_progress}
-                  onChange={(e) => setColumnMap({ ...columnMap, in_progress: e.target.value })}
-                  className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-gold"
-                >
-                  {selectedProject.columns.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-2 text-[11px] text-muted">
-                  Progresso e próximos passos.
-                </p>
-              </div>
+                <div className="rounded-xl border border-gold/40 bg-gold-soft/20 p-4">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-[#8a5c00]">
+                    Tarefas Em Curso
+                  </label>
+                  <select
+                    value={columnMap.in_progress}
+                    onChange={(e) => setColumnMap({ ...columnMap, in_progress: e.target.value })}
+                    className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-gold"
+                  >
+                    {(selectedProject?.columns?.length ? selectedProject.columns : [columnMap.in_progress]).map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-[11px] text-muted">
+                    Progresso e próximos passos.
+                  </p>
+                </div>
 
-              <div className="rounded-xl border border-accent/30 bg-accent-soft/20 p-4">
-                <label className="text-xs font-semibold uppercase tracking-wider text-accent-hover">
-                  Tarefas Bloqueadas
-                </label>
-                <select
-                  value={columnMap.blocked}
-                  onChange={(e) => setColumnMap({ ...columnMap, blocked: e.target.value })}
-                  className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-                >
-                  {selectedProject.columns.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-2 text-[11px] text-muted">
-                  Identificação de bloqueios e impedimentos.
-                </p>
+                <div className="rounded-xl border border-accent/30 bg-accent-soft/20 p-4">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-accent-hover">
+                    Tarefas Bloqueadas
+                  </label>
+                  <select
+                    value={columnMap.blocked}
+                    onChange={(e) => setColumnMap({ ...columnMap, blocked: e.target.value })}
+                    className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                  >
+                    {(selectedProject?.columns?.length ? selectedProject.columns : [columnMap.blocked]).map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-[11px] text-muted">
+                    Identificação de bloqueios e impedimentos.
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="mt-8 flex justify-between">
               <button
@@ -508,10 +723,17 @@ export default function OnboardingPage() {
               </div>
             </div>
 
+            {submitError && (
+              <p className="mt-4 rounded-lg bg-accent-soft/30 p-2.5 text-xs text-accent font-medium">
+                {submitError}
+              </p>
+            )}
+
             <div className="mt-8 flex justify-between">
               <button
                 type="button"
                 onClick={() => setStep(2)}
+                disabled={isSubmitting}
                 className={buttonClass("secondary", "md")}
               >
                 <ArrowLeft className="h-4 w-4" />
@@ -519,11 +741,21 @@ export default function OnboardingPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setStep(4)}
+                onClick={handleFinishStep3}
+                disabled={isSubmitting}
                 className={buttonClass("primary", "md")}
               >
-                Gerar Primeiro Relatório
-                <Sparkles className="h-4 w-4" />
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    A criar cliente e relatório...
+                  </>
+                ) : (
+                  <>
+                    Gerar Primeiro Relatório
+                    <Sparkles className="h-4 w-4" />
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -539,7 +771,7 @@ export default function OnboardingPage() {
               Configuração concluída com sucesso!
             </h2>
             <p className="mx-auto mt-2 max-w-md text-sm text-muted">
-              O projeto <strong className="font-medium text-ink-soft">{selectedProject.title}</strong> está agora ligado ao cliente <strong className="font-medium text-ink-soft">{clientData.name}</strong>.
+              O projeto <strong className="font-medium text-ink-soft">{selectedProject?.title}</strong> está agora ligado ao cliente <strong className="font-medium text-ink-soft">{clientData.name}</strong>.
             </p>
 
             <div className="mx-auto mt-6 max-w-md rounded-xl border border-line bg-paper/60 p-4 text-left">
@@ -549,7 +781,7 @@ export default function OnboardingPage() {
               <dl className="mt-2 space-y-1.5 text-xs text-ink-soft">
                 <div className="flex justify-between">
                   <dt className="text-muted">Board GitHub:</dt>
-                  <dd className="font-medium">{selectedProject.title}</dd>
+                  <dd className="font-medium">{selectedProject?.title}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted">Destinatário:</dt>
@@ -561,14 +793,16 @@ export default function OnboardingPage() {
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted">Status:</dt>
-                  <dd className="font-medium text-teal">Rascunho gerado (Semana 42)</dd>
+                  <dd className="font-medium text-teal">
+                    {createdReportId ? "Rascunho gerado com dados do GitHub" : "Cliente registado com sucesso"}
+                  </dd>
                 </div>
               </dl>
             </div>
 
             <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
               <Link
-                href="/dashboard/reports/rpt-atelier-w42"
+                href={createdReportId ? `/dashboard/reports/${createdReportId}` : "/dashboard"}
                 className={buttonClass("primary", "md")}
               >
                 Rever rascunho gerado
