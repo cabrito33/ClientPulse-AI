@@ -217,36 +217,65 @@ export async function completeOnboardingAction(
     };
     const dbTone = toneMap[input.tone] || "executive";
 
+    // Check if client with this email already exists for this agency to avoid duplicate errors
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: newClient, error: clientErr } = await (supabase.from("clients") as any)
-      .insert({
-        agency_id: agencyId,
-        name: input.clientName,
-        email: input.clientEmail,
-        company_name: input.clientName,
-        communication_tone: dbTone,
-        language: input.language,
-        github_project_id: input.projectId,
-        github_project_owner: input.projectOwner || "default",
-        github_project_type: "user",
-        column_mapping: {
-          done: [input.columnMapping.done],
-          in_progress: [input.columnMapping.in_progress],
-          blocked: [input.columnMapping.blocked],
-        },
-        auto_send_enabled: false,
-      })
+    const { data: existingClient } = await (supabase.from("clients") as any)
       .select("id")
-      .single();
+      .eq("agency_id", agencyId)
+      .eq("email", input.clientEmail)
+      .maybeSingle();
 
-    if (clientErr || !newClient) {
-      return {
-        success: false,
-        error: clientErr?.message || "Erro ao criar cliente.",
-      };
+    let clientId: string;
+
+    if (existingClient?.id) {
+      clientId = existingClient.id as string;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase.from("clients") as any)
+        .update({
+          name: input.clientName,
+          company_name: input.clientName,
+          communication_tone: dbTone,
+          language: input.language,
+          github_project_id: input.projectId,
+          github_project_owner: input.projectOwner || "default",
+          column_mapping: {
+            done: [input.columnMapping.done],
+            in_progress: [input.columnMapping.in_progress],
+            blocked: [input.columnMapping.blocked],
+          },
+        })
+        .eq("id", clientId);
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: newClient, error: clientErr } = await (supabase.from("clients") as any)
+        .insert({
+          agency_id: agencyId,
+          name: input.clientName,
+          email: input.clientEmail,
+          company_name: input.clientName,
+          communication_tone: dbTone,
+          language: input.language,
+          github_project_id: input.projectId,
+          github_project_owner: input.projectOwner || "default",
+          github_project_type: "user",
+          column_mapping: {
+            done: [input.columnMapping.done],
+            in_progress: [input.columnMapping.in_progress],
+            blocked: [input.columnMapping.blocked],
+          },
+          auto_send_enabled: false,
+        })
+        .select("id")
+        .single();
+
+      if (clientErr || !newClient) {
+        return {
+          success: false,
+          error: clientErr?.message || "Erro ao criar cliente.",
+        };
+      }
+      clientId = newClient.id as string;
     }
-
-    const clientId = newClient.id as string;
 
     let generatedReportId: string | null = null;
     try {
