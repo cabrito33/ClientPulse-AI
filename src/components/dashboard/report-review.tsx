@@ -144,10 +144,6 @@ export function ReportReview({
     });
   }
 
-  function approveWithCopy() {
-    approve();
-  }
-
   async function handleToggleAutoSend() {
     const nextVal = !autoSend;
     setAutoSend(nextVal);
@@ -505,18 +501,6 @@ export function ReportReview({
               Tarefas concluídas por sprint, para dar contexto ao texto.
             </p>
           </section>
-
-          <div className="rounded-2xl border border-dashed border-line-strong/70 p-4 text-center">
-            <button
-              type="button"
-              onClick={approveWithCopy}
-              disabled={state === "sent"}
-              className="text-[11.5px] font-medium text-muted hover:text-ink disabled:opacity-40"
-            >
-              <RotateCcw className="mr-1 inline h-3 w-3" aria-hidden="true" />
-              Simular envio sem alterações
-            </button>
-          </div>
         </aside>
       </div>
     </main>
