@@ -11,6 +11,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { getClients, getDashboardSummary, getReports, getSprintCards, getSprintMetrics } from "@/lib/api";
+import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { PlannedVsCompletedChart } from "@/components/dashboard/charts";
@@ -18,6 +19,36 @@ import { ResendButton } from "@/components/dashboard/resend-button";
 import { cn, formatDateTime } from "@/lib/utils";
 
 export const metadata = { title: "Visão geral" };
+
+function getLisbonGreeting(): string {
+  const formatter = new Intl.DateTimeFormat("pt-PT", {
+    timeZone: "Europe/Lisbon",
+    hour: "numeric",
+    hour12: false,
+  });
+  const hour = parseInt(formatter.format(new Date()), 10);
+  if (hour < 12) return "Bom dia";
+  if (hour < 20) return "Boa tarde";
+  return "Boa noite";
+}
+
+function getLisbonFormattedDate(): string {
+  const formatter = new Intl.DateTimeFormat("pt-PT", {
+    timeZone: "Europe/Lisbon",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  return formatter.format(new Date());
+}
+
+function getIsoWeekNumber(d: Date = new Date()): number {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+}
 
 const statusBadge = {
   pending_approval: { tone: "gold" as const, label: "Aguarda aprovação" },
@@ -41,6 +72,36 @@ export default async function DashboardPage() {
     getSprintCards(),
   ]);
 
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  let rawName =
+    (user?.user_metadata?.full_name as string) ||
+    (user?.user_metadata?.name as string) ||
+    "";
+
+  if (!rawName && user?.id) {
+    const result = await supabase
+      .from("agencies")
+      .select("name")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const agencyRow = result.data as { name: string } | null;
+    if (agencyRow?.name) {
+      rawName = agencyRow.name;
+    }
+  }
+
+  const userEmailFallback = user?.email?.split("@")[0] || "Utilizador";
+  const firstName = rawName.trim()
+    ? rawName.trim().split(/\s+/)[0] || userEmailFallback
+    : userEmailFallback;
+
+  const greeting = getLisbonGreeting();
+  const currentDateFormatted = getLisbonFormattedDate();
+
   const featuredClient = clients[0] ?? null;
   const metrics = featuredClient
     ? await getSprintMetrics(featuredClient.id)
@@ -51,15 +112,37 @@ export default async function DashboardPage() {
   const failed = reports.filter((r) => r.status === "failed");
   const clientById = Object.fromEntries(clients.map((c) => [c.id, c]));
 
+  const currentWeek = getIsoWeekNumber();
+  const sprintSubtitle = !featuredClient
+    ? "Sem dados ainda"
+    : process.env.NEXT_PUBLIC_USE_MOCK === "true"
+      ? `Semana ${currentWeek} · GitHub Projects (demo)`
+      : `Semana ${currentWeek} · GitHub Projects`;
+
+  const sentCount = sent.length;
+  let timeSavedValue = "—";
+  let timeSavedHint = "sem relatórios enviados";
+
+  if (sentCount > 0) {
+    const minutes = sentCount * 30;
+    if (minutes >= 60) {
+      const hours = (minutes / 60).toFixed(1).replace(/\.0$/, "");
+      timeSavedValue = `${hours} h`;
+    } else {
+      timeSavedValue = `${minutes} min`;
+    }
+    timeSavedHint = "estimativa (~30 min/relatório)";
+  }
+
   return (
     <main className="mx-auto max-w-[1180px] px-5 py-8 sm:px-8 lg:py-10">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-[11.5px] font-semibold uppercase tracking-[0.16em] text-muted-soft">
-            Sexta-feira, 16 de outubro
+            {currentDateFormatted}
           </p>
           <h1 className="font-display mt-1.5 text-[30px] leading-tight text-ink sm:text-[34px]">
-            Bom dia, Maria.
+            {greeting}, {firstName}.
           </h1>
           <p className="mt-1 text-[14px] text-muted">
             {pending.length} relatórios por aprovar · {clients.filter((c) => c.status === "active").length} clientes ativos
@@ -209,8 +292,8 @@ export default async function DashboardPage() {
         />
         <StatCard
           label="Tempo poupado"
-          value={`${summary.timeSavedHours} h`}
-          hint="estimativa do protótipo"
+          value={timeSavedValue}
+          hint={timeSavedHint}
           icon={Clock}
         />
       </div>
@@ -338,7 +421,7 @@ export default async function DashboardPage() {
               <h2 id="sprint" className="text-[14.5px] font-semibold text-ink">
                 Tarefas por sprint
               </h2>
-              <p className="mt-0.5 text-[11.5px] text-muted">Semana 42 · GitHub Projects (demo)</p>
+              <p className="mt-0.5 text-[11.5px] text-muted">{sprintSubtitle}</p>
             </div>
             <Badge tone="muted">{featuredClient ? featuredClient.company : "Sem clientes"}</Badge>
           </div>
@@ -348,7 +431,7 @@ export default async function DashboardPage() {
               const items = cards.filter(
                 (c) =>
                   c.column === col &&
-                  (!featuredClient || c.clientId === featuredClient.id || c.clientId === "atelier-mira"),
+                  Boolean(featuredClient && c.clientId === featuredClient.id),
               );
               const meta = columnMeta[col];
               return (

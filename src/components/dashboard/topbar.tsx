@@ -16,17 +16,32 @@ import { useState } from "react";
 import { Logo } from "@/components/ui/logo";
 import { cn } from "@/lib/utils";
 
-const links = [
-  { href: "/dashboard", label: "Visão geral", icon: LayoutDashboard },
-  { href: "/dashboard/reports/rpt-atelier-w42", label: "Rascunhos", icon: FileText },
-  { href: "/dashboard/clients/atelier-mira", label: "Clientes", icon: Users },
-  { href: "/onboarding", label: "Assistente", icon: Sparkles },
-  { href: "/portal/demo-abc123", label: "Portal do cliente", icon: ArrowUpRight },
-];
-
-export function DashboardTopbar({ pending }: { pending: number }) {
+export function DashboardTopbar({
+  pending,
+  firstPortalToken,
+  firstClientId,
+  firstReportId,
+}: {
+  pending: number;
+  firstPortalToken?: string | null;
+  firstClientId?: string | null;
+  firstReportId?: string | null;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+
+  const reportsHref = firstReportId ? `/dashboard/reports/${firstReportId}` : "/dashboard";
+  const clientsHref = firstClientId ? `/dashboard/clients/${firstClientId}` : "/onboarding";
+
+  const links = [
+    { href: "/dashboard", label: "Visão geral", icon: LayoutDashboard },
+    { href: reportsHref, label: "Rascunhos", icon: FileText },
+    { href: clientsHref, label: "Clientes", icon: Users },
+    { href: "/onboarding", label: "Assistente", icon: Sparkles },
+    ...(firstPortalToken
+      ? [{ href: `/portal/${firstPortalToken}`, label: "Portal do cliente", icon: ArrowUpRight }]
+      : []),
+  ];
 
   return (
     <div className="sticky top-0 z-40 border-b border-line bg-paper/90 backdrop-blur lg:hidden">
@@ -35,7 +50,7 @@ export function DashboardTopbar({ pending }: { pending: number }) {
         <div className="flex items-center gap-2">
           {pending > 0 && (
             <Link
-              href="/dashboard/reports/rpt-atelier-w42"
+              href={reportsHref}
               className="rounded-full bg-accent px-2.5 py-1 text-[11px] font-semibold text-white"
             >
               {pending} por aprovar

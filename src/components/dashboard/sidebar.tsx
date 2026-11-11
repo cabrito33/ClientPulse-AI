@@ -14,17 +14,20 @@ import {
   LogIn,
 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 
-const nav = [
-  { href: "/dashboard", label: "Visão geral", icon: LayoutDashboard, exact: true },
-  { href: "/dashboard/reports/rpt-atelier-w42", label: "Revisão de rascunho", icon: FileText, exact: true },
-  { href: "/dashboard/clients/atelier-mira", label: "Clientes", icon: Users, exact: true },
-];
-
-export function DashboardSidebar({ pending }: { pending: number }) {
+export function DashboardSidebar({
+  pending,
+  firstPortalToken,
+  firstClientId,
+  firstReportId,
+}: {
+  pending: number;
+  firstPortalToken?: string | null;
+  firstClientId?: string | null;
+  firstReportId?: string | null;
+}) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -61,14 +64,24 @@ export function DashboardSidebar({ pending }: { pending: number }) {
     }
   }
 
+  const reportsHref = firstReportId ? `/dashboard/reports/${firstReportId}` : "/dashboard";
+  const clientsHref = firstClientId ? `/dashboard/clients/${firstClientId}` : "/onboarding";
+
+  const nav = [
+    { href: "/dashboard", label: "Visão geral", icon: LayoutDashboard, exact: true },
+    { href: reportsHref, label: "Revisão de rascunho", icon: FileText, exact: false },
+    { href: clientsHref, label: "Clientes", icon: Users, exact: false },
+  ];
+
   const initials = user?.name
     ? user.name
         .split(" ")
+        .filter(Boolean)
         .map((p) => p[0])
         .slice(0, 2)
         .join("")
         .toUpperCase()
-    : "MD";
+    : "CP";
 
   return (
     <aside className="hidden w-[248px] shrink-0 flex-col border-r border-line bg-sand/40 lg:flex">
@@ -110,9 +123,9 @@ export function DashboardSidebar({ pending }: { pending: number }) {
         </nav>
 
         <p className="px-2 pb-2 pt-6 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-muted-soft">
-          Demonstração
+          Atalhos
         </p>
-        <nav aria-label="Atalhos de demonstração" className="space-y-0.5">
+        <nav aria-label="Atalhos" className="space-y-0.5">
           <Link
             href="/onboarding"
             className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13.5px] text-muted transition-colors hover:bg-sand hover:text-ink"
@@ -120,13 +133,17 @@ export function DashboardSidebar({ pending }: { pending: number }) {
             <Sparkles className="h-4 w-4 text-muted-soft" aria-hidden="true" />
             Assistente
           </Link>
-          <Link
-            href="/portal/demo-abc123"
-            className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13.5px] text-muted transition-colors hover:bg-sand hover:text-ink"
-          >
-            <ArrowUpRight className="h-4 w-4 text-muted-soft" aria-hidden="true" />
-            Portal do cliente
-          </Link>
+          {firstPortalToken && (
+            <Link
+              href={`/portal/${firstPortalToken}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13.5px] text-muted transition-colors hover:bg-sand hover:text-ink"
+            >
+              <ArrowUpRight className="h-4 w-4 text-muted-soft" aria-hidden="true" />
+              Portal do cliente
+            </Link>
+          )}
           <Link
             href="/"
             className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13.5px] text-muted transition-colors hover:bg-sand hover:text-ink"
@@ -145,10 +162,10 @@ export function DashboardSidebar({ pending }: { pending: number }) {
             </span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-[12.5px] font-medium text-ink">
-                {user?.name || "Maria Duarte"}
+                {user?.name || "Utilizador"}
               </p>
               <p className="truncate text-[10.5px] text-muted">
-                {user?.email || "Studio Duarte · demo"}
+                {user?.email || ""}
               </p>
             </div>
           </div>
@@ -172,11 +189,6 @@ export function DashboardSidebar({ pending }: { pending: number }) {
             </Link>
           )}
         </div>
-        {!user && (
-          <Badge tone="gold" className="mt-2 w-full justify-center">
-            Dados de demonstração
-          </Badge>
-        )}
       </div>
     </aside>
   );
