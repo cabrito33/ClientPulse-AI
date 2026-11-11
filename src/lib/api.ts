@@ -65,10 +65,12 @@ type ReportTaskRow = Tables<"report_tasks">;
  * derived or given sensible defaults so pages never break.
  */
 function mapClient(row: ClientRow): Client {
-  // Derive tone: DB stores free-text; map known values, default "formal".
+  // Derive tone: DB stores 'formal', 'executive', 'casual'; map to frontend ClientTone.
   const toneMap: Record<string, Client["tone"]> = {
     formal: "formal",
+    executive: "executivo",
     executivo: "executivo",
+    casual: "descontraido",
     descontraido: "descontraido",
   };
   const tone: Client["tone"] =
