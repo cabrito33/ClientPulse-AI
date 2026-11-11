@@ -254,20 +254,24 @@ function mapReportTask(row: ReportTaskRow): SprintCard {
 /*  Utility helpers                                                     */
 /* ------------------------------------------------------------------ */
 
-/** Splits a newline-delimited summary string into an array of items. */
+/** Splits a newline-delimited summary string into an array of items, stripping bullets. */
 function splitLines(text: string): string[] {
   return text
     .split("\n")
-    .map((l) => l.replace(/^[-*]\s*/, "").trim())
+    .map((l) => l.replace(/^(\s*[-*•◦▪]\s*)+/, "").trim())
     .filter(Boolean);
 }
 
-/** Renders the structured sections into the editable markdown body. */
+/** Renders the structured sections into the editable markdown body with clean single bullets. */
 function buildBody(s: ReportSection): string {
-  const bullets = (items: string[]) =>
-    items.length > 0
-      ? items.map((i) => `- ${i}`).join("\n")
+  const bullets = (items: string[]) => {
+    const cleaned = items
+      .map((i) => i.replace(/^(\s*[-*•◦▪]\s*)+/, "").trim())
+      .filter(Boolean);
+    return cleaned.length > 0
+      ? cleaned.map((i) => `- ${i}`).join("\n")
       : "- (sem registos)";
+  };
 
   return [
     "## O que foi feito",

@@ -59,7 +59,16 @@ export function ReportReview({
   const [error, setError] = useState<string | null>(report.errorMessage ?? null);
   const [isPending, startTransition] = useTransition();
 
-  const parsed = useMemo<ReportSection>(() => parseBodyFallback(body, report.sections), [body, report.sections]);
+  const parsed = useMemo<ReportSection>(() => {
+    const raw = parseBodyFallback(body, report.sections);
+    const cleanList = (list: string[]) =>
+      list.map((i) => i.replace(/^(\s*[-*•◦▪]\s*)+/, "").trim()).filter(Boolean);
+    return {
+      done: cleanList(raw.done),
+      blocks: cleanList(raw.blocks),
+      next: cleanList(raw.next),
+    };
+  }, [body, report.sections]);
   const dirty = body !== report.body;
   const wordCount = body.trim().split(/\s+/).filter(Boolean).length;
 
@@ -590,9 +599,14 @@ function BlockEditor({
 }
 
 function serialize(s: ReportSection, intro?: string): string {
-  const bullets = (items: string[]) => items.map((i) => `- ${i}`).join("\n");
+  const bullets = (items: string[]) =>
+    items
+      .map((i) => i.replace(/^(\s*[-*•◦▪]\s*)+/, "").trim())
+      .filter(Boolean)
+      .map((i) => `- ${i}`)
+      .join("\n");
   const blocks = [
-    "## O que foi feito",
+    headings.done,
     bullets(s.done),
     "",
     headings.blocks,
