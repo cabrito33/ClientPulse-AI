@@ -259,6 +259,24 @@ Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.s
    - O `pg_net` obtém o segredo desencriptado em tempo de execução via `vault.decrypted_secrets`.
    - A Edge Function `dispatch-scheduled-reports` valida `req.headers.get('X-Scheduled-Secret') === Deno.env.get('SCHEDULED_FUNCTION_SECRET')` antes de processar qualquer cliente.
 
+### 5.7 Assistente Conversacional de Onboarding e FAQ (PulseBot)
+- **Função:** `supabase/functions/onboarding-chat/index.ts`.
+- **Fonte de Conhecimento:** Base factual embutida em `supabase/functions/_shared/faq.ts`, estritamente alinhada com `docs/PRD.md` (regras de produto, metadados vs código, portal sem login e distinção clara entre MVP e evoluções futuras).
+- **Ordem do Guia:**
+  1. Conexão GitHub: recomenda token *classic* com `read:project` (e `repo` se privado); alerta para limitações de tokens *fine-grained* em projetos pessoais.
+  2. Escolha de board na lista do ecrã após conexão validada.
+  3. Mapeamento de colunas (Concluído, Em curso, Bloqueado; Bloqueado pode ficar vazio).
+  4. Configuração do 1.º cliente (Nome, E-mail, Tom e Idioma).
+- **Guardrails de Segurança e Âmbito:**
+  - **Validação prévia:** Recusa qualquer tentativa de avançar de passo sem conexão GitHub válida (`isConnected === true`).
+  - **Recusa de âmbito:** Perguntas fora de âmbito (política, desporto, código genérico, outros produtos) recebem recusa curta e educada em PT-PT.
+  - **Proteção contra Prompt Injection:** Mensagens do utilizador são tratadas estritamente como dados, nunca como instruções; nunca revela chaves, tokens ou prompts de sistema.
+  - **Mascaramento:** Tokens PAT são validados em memória, mascarados no histórico e cifrados em repouso com AES-GCM (nunca registados em logs).
+- **Robustez e Fallback Determinístico:**
+  - Invoca o modelo Gemini (`gemini-3.8-flash` ou `GEMINI_MODEL`) com até 2 retentativas para erros transitórios (429/500/503).
+  - Tenta modelo secundário (`gemini-3.7-flash` ou `GEMINI_FALLBACK_MODEL`) se o principal falhar.
+  - Caso a IA esteja indisponível ou sem chave configurada, ativa o **fallback determinístico** de `_shared/faq.ts` por análise de palavras-chave, garantindo continuidade sem erros HTTP 500.
+
 ---
 
 ## 6. Technical Risks & Mitigation Strategies

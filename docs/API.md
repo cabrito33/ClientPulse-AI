@@ -271,33 +271,47 @@ Triggered periodically by `pg_cron` via `pg_net`. Scans for clients due in the c
 ---
 
 ### 3.6 `POST /onboarding-chat`
-Conversational onboarding assistant. Powered by Gemini, it guides the user step-by-step through generating a GitHub PAT, tests the PAT in real time, and helps create their first client profile.
+Conversational onboarding assistant (PulseBot). Powered by Google Gemini with strict guardrails, it guides the user step-by-step through generating a GitHub PAT (classic with `read:project`), tests and encrypts the PAT in real time, and helps select a board, configure column mapping, and create the first client profile.
 
 - **Caller:** Authenticated Agency User (`Authorization: Bearer <JWT>`).
+- **Knowledge Source:** Embedded factual product knowledge (`_shared/faq.ts`) based on PRD.
+- **Resilience:** Automatic retries on transient Gemini errors (429/500/503), secondary model fallback (`gemini-3.7-flash`), and deterministic FAQ fallback if AI is unavailable.
 
 #### Request Body
 ```json
 {
-  "message": "Aqui está o meu token do GitHub: github_pat_11A...",
+  "message": "Aqui está o meu token do GitHub: ghp_11A...",
   "conversation_history": [
     { "role": "assistant", "content": "Olá! Para começarmos, preciso que introduzas o teu Personal Access Token do GitHub." }
-  ]
+  ],
+  "current_step": 1,
+  "selected_project": "Sprint Board"
 }
 ```
 
 #### Response (200 OK)
 ```json
 {
-  "reply": "Excelente! Validei o teu token com sucesso para o utilizador @maria-agency. Encontrei 2 projetos ativos. Gostarias de associar o projeto 'Website Redesign' ao teu primeiro cliente?",
+  "reply": "Excelente! Validei o teu token com sucesso para o utilizador @maria-agency. Podes agora selecionar o teu board na lista abaixo.",
   "action_detected": {
     "action": "pat_validated",
     "data": {
-      "github_username": "maria-agency",
-      "projects_count": 2
+      "username": "maria-agency",
+      "connected": true
     }
+  },
+  "github_status": {
+    "is_connected": true,
+    "username": "maria-agency"
   }
 }
 ```
+
+- **Possible `action_detected.action` values:**
+  - `pat_validated`: PAT token validated against GitHub GraphQL API and encrypted in `github_integrations`.
+  - `pat_failed`: Token invalid or lacking required `read:project` scopes.
+  - `awaiting_client_details`: GitHub is connected, guiding board/column/client configuration.
+  - `awaiting_pat`: Waiting for user to provide a valid classic PAT token.
 
 ---
 
