@@ -113,6 +113,7 @@ Deno.serve(async (req: Request) => {
       portalToken: client.portal_token,
       appUrl,
       language: (client.language as 'pt' | 'en') ?? 'pt',
+      reportId: report.id,
     });
 
     const now = new Date().toISOString();

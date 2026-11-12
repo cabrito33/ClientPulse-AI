@@ -205,6 +205,7 @@ export interface Database {
           raw_github_data: Json | null;
           approved_at: string | null;
           sent_at: string | null;
+          opened_at: string | null;
           email_delivery_id: string | null;
           created_at: string;
           updated_at: string;
@@ -222,6 +223,7 @@ export interface Database {
           raw_github_data?: Json | null;
           approved_at?: string | null;
           sent_at?: string | null;
+          opened_at?: string | null;
           email_delivery_id?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -239,6 +241,7 @@ export interface Database {
           raw_github_data?: Json | null;
           approved_at?: string | null;
           sent_at?: string | null;
+          opened_at?: string | null;
           email_delivery_id?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -368,6 +371,7 @@ export interface Database {
           message_id: string | null;
           error_message: string | null;
           sent_at: string;
+          opened_at?: string | null;
         };
         Insert: {
           id?: string;
@@ -380,6 +384,7 @@ export interface Database {
           message_id?: string | null;
           error_message?: string | null;
           sent_at?: string;
+          opened_at?: string | null;
         };
         Update: {
           id?: string;
@@ -392,6 +397,7 @@ export interface Database {
           message_id?: string | null;
           error_message?: string | null;
           sent_at?: string;
+          opened_at?: string | null;
         };
         Relationships: [
           {

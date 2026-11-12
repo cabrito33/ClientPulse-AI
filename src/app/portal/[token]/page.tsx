@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2, ShieldCheck, ArrowLeft, Clock, FileText } from "lucide-react";
-import { getPortalData } from "@/lib/api";
+import { getPortalData, recordReportOpen } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Logo } from "@/components/ui/logo";
 import { CompletedBySprintChart } from "@/components/dashboard/charts";
@@ -30,6 +30,11 @@ export default async function PortalPage({ params }: PortalPageProps) {
   }
 
   const { client, current, history, metrics } = data;
+
+  // Track email/portal view if not already opened (BE-21)
+  if (current && !current.openedAt) {
+    void recordReportOpen(current.id);
+  }
 
   return (
     <div className="min-h-screen bg-paper text-ink">

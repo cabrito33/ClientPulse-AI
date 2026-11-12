@@ -45,11 +45,13 @@ export async function getClientByPortalToken(token: string): Promise<Client | nu
 /* ------------------------------------------------------------------ */
 
 export async function getReports(): Promise<Report[]> {
-  return settle(reports);
+  const merged = reports.map((r) => readReportWithOverrides(r.id) ?? r);
+  return settle(merged);
 }
 
 export async function getReport(id: string): Promise<Report | null> {
-  return settle(reportsById[id] ?? null);
+  const merged = readReportWithOverrides(id) ?? reportsById[id] ?? null;
+  return settle(merged);
 }
 
 export async function getReportsForClient(clientId: string): Promise<Report[]> {
@@ -122,6 +124,44 @@ const reportOverrides = new Map<string, Partial<Report>>();
 /** Applies a local override so the UI reflects approvals within the session. */
 export function applyReportOverride(id: string, patch: Partial<Report>) {
   reportOverrides.set(id, { ...(reportOverrides.get(id) ?? {}), ...patch });
+}
+
+/**
+ * Records the first open timestamp of a report (BE-21).
+ *
+ * CRITÉRIOS DE ACEITAÇÃO:
+ * 1. Regista data/hora da primeira abertura.
+ * 2. Pedidos repetidos não sobrescrevem o primeiro registo (idempotência).
+ */
+export async function recordReportOpen(
+  reportId: string,
+  timestamp?: string
+): Promise<{ success: boolean; reportId: string; openedAt: string; isFirstOpen: boolean }> {
+  const current = readReportWithOverrides(reportId) ?? reportsById[reportId];
+  if (!current) {
+    throw new Error(`Relatório com id '${reportId}' não encontrado.`);
+  }
+
+  // Acceptance Criterion 3: Repeated requests NEVER overwrite the first timestamp
+  if (current.openedAt) {
+    return {
+      success: true,
+      reportId: current.id,
+      openedAt: current.openedAt,
+      isFirstOpen: false,
+    };
+  }
+
+  // Acceptance Criterion 1: Record timestamp of first open
+  const recordedTime = timestamp || new Date().toISOString();
+  applyReportOverride(reportId, { openedAt: recordedTime });
+
+  return {
+    success: true,
+    reportId: current.id,
+    openedAt: recordedTime,
+    isFirstOpen: true,
+  };
 }
 
 export function readReportWithOverrides(id: string): Report | null {
