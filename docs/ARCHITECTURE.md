@@ -297,3 +297,25 @@ Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.s
 2. **Migrations Over Dashboard Edits:** Never alter table schemas in the Supabase web dashboard without saving the corresponding SQL in `supabase/migrations/`.
 3. **Local First Testing:** Test Edge Functions locally using `supabase functions serve <function-name>` before deploying to remote Supabase projects.
 4. **Descriptive Comments:** Write comments that explain the business *why*, not just the technical *what*, so your team partner can easily review your pull requests.
+
+---
+
+## 8. Antes de Fazer Push: `npm run check` e Regras 'use server'
+
+### 8.1 Comando de Verificação Completa
+Antes de qualquer `git commit` ou `git push`, corre obrigatoriamente:
+```bash
+npm run check
+```
+Este comando executa em cadeia:
+1. `npm run lint` (ESLint)
+2. `npx tsc --noEmit` (Verificação de tipos TypeScript)
+3. `npm run check:use-server` (Validação de exportações em módulos Server Actions)
+4. `cross-env NEXT_DIST_DIR=.next-check next build` (Build de produção isolado em `.next-check`, sem colidir com instâncias ativas de `npm run dev`)
+
+### 8.2 Regras Estritas para Ficheiros `"use server"`
+Nos módulos que contêm a diretiva `"use server"` no topo (Server Actions, ex.: `src/app/actions/*.ts`):
+- **Apenas funções assíncronas podem ser exportadas:** `export async function minhaAcao(...)`.
+- **Tipos e interfaces TypeScript são permitidos:** `export type ...`, `export interface ...`.
+- **Proibido exportar constantes ou valores:** `export const`, `export let`, `export var`, `export default`, `export class` ou funções síncronas são rejeitados pelo compilador do Next.js com o erro: *"Only async functions are allowed to be exported in a 'use server' file"*.
+- **Constantes de Configuração:** Configurações como `maxDuration`, `dynamic`, `revalidate` pertencem exclusivamente a ficheiros de rota (`route.ts`), página (`page.tsx`) ou layout (`layout.tsx`), **NUNCA** a ficheiros de Server Actions (`"use server"`).
