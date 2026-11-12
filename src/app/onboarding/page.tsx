@@ -112,6 +112,8 @@ export default function OnboardingPage() {
         body: JSON.stringify({
           message: textToSend,
           conversation_history: chatMessages,
+          is_connected: Boolean(connectedUser),
+          connected_username: connectedUser,
         }),
       });
 
@@ -128,10 +130,13 @@ export default function OnboardingPage() {
         speakText(botReply);
       }
 
-      // Check if PAT was validated inside chat
+      // Check if PAT was validated inside chat or if advancement was triggered
       if (data.action_detected?.action === "pat_validated") {
         setConnectedUser(data.action_detected.data?.username || "github_user");
+        setPatError(null);
         setStep(2);
+      } else if (data.action_detected?.action === "blocked_requires_pat") {
+        setPatError("Ligação ao GitHub obrigatória antes de avançar.");
       }
     } catch {
       setChatMessages([
@@ -159,7 +164,10 @@ export default function OnboardingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: `Aqui está o meu token: ${patInput.trim()}`,
+          pat_token: patInput.trim(),
           conversation_history: chatMessages,
+          is_connected: Boolean(connectedUser),
+          connected_username: connectedUser,
         }),
       });
 
