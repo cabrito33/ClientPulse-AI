@@ -1,7 +1,5 @@
 "use server";
 
-export const maxDuration = 90;
-
 import { invokeEdgeFunction } from "@/lib/edge";
 import { createClient } from "@/lib/supabase/server";
 
