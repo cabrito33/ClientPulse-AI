@@ -35,7 +35,11 @@ export interface GitHubProjectSummary {
  */
 export async function sendOnboardingMessageAction(
   message: string,
-  conversationHistory: OnboardingChatMessage[]
+  conversationHistory: OnboardingChatMessage[],
+  context?: {
+    current_step?: number;
+    selected_project?: string;
+  }
 ): Promise<
   | { success: true; data: OnboardingChatResponse }
   | { success: false; error: string }
@@ -46,6 +50,8 @@ export async function sendOnboardingMessageAction(
       {
         message,
         conversation_history: conversationHistory,
+        current_step: context?.current_step,
+        selected_project: context?.selected_project,
       }
     );
     return { success: true, data: res };

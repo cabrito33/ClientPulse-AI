@@ -995,6 +995,47 @@ export async function updateClientAutoSend(
   }
 }
 
+/**
+ * Records the first opened_at timestamp for a report (idempotent).
+ */
+export async function recordReportOpen(
+  reportId: string,
+  timestamp?: string
+): Promise<{ reportId: string; openedAt: string; isFirstOpen: boolean }> {
+  const supabase = await createClient();
+  const openedAtTime = timestamp || new Date().toISOString();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existing } = await (supabase.from("reports") as any)
+    .select("id, opened_at")
+    .eq("id", reportId)
+    .maybeSingle();
+
+  if (!existing) {
+    throw new Error(`Relatório com ID '${reportId}' não encontrado.`);
+  }
+
+  const existingOpenedAt = (existing as { opened_at?: string | null }).opened_at;
+  if (existingOpenedAt) {
+    return {
+      reportId,
+      openedAt: existingOpenedAt,
+      isFirstOpen: false,
+    };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase.from("reports") as any)
+    .update({ opened_at: openedAtTime })
+    .eq("id", reportId);
+
+  return {
+    reportId,
+    openedAt: openedAtTime,
+    isFirstOpen: true,
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /*  Pure utilities — still exported for components that import them    */
 /* ------------------------------------------------------------------ */

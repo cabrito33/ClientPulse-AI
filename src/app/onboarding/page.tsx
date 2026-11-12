@@ -206,7 +206,10 @@ export default function OnboardingPage() {
     setIsChatLoading(true);
 
     try {
-      const res = await sendOnboardingMessageAction(rawText, previousHistory);
+      const res = await sendOnboardingMessageAction(rawText, previousHistory, {
+        current_step: step,
+        selected_project: selectedProject?.title,
+      });
       if (res.success && res.data) {
         setMessages((prev) => [
           ...prev,
@@ -536,7 +539,7 @@ export default function OnboardingPage() {
             <div className="mt-8 flex justify-end">
               <button
                 type="button"
-                disabled={!selectedProject || isLoadingColumns || isLoadingProjects}
+                disabled={!githubConnected || !selectedProject || !selectedProject.id || isLoadingColumns || isLoadingProjects}
                 onClick={() => setStep(2)}
                 className={buttonClass("primary", "md")}
               >
