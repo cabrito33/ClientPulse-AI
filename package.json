@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:use-server": "node scripts/check-use-server.mjs",
+    "check": "npm run lint && npx tsc --noEmit && npm run check:use-server && cross-env NEXT_DIST_DIR=.next-check next build"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
@@ -24,6 +26,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "^15.5.28",
     "tailwindcss": "^4",
