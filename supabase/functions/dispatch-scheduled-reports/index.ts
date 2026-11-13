@@ -23,6 +23,7 @@ import { fetchBoardTasks } from '../_shared/github.ts';
 import { generateExecutiveReport } from '../_shared/gemini.ts';
 import { sendReportEmail } from '../_shared/resend.ts';
 import { decryptPat } from '../_shared/crypto.ts';
+import { findExistingWeekReport } from '../_shared/idempotency.ts';
 
 Deno.serve(async (req: Request) => {
   const corsResponse = handleCors(req);
@@ -92,6 +93,13 @@ Deno.serve(async (req: Request) => {
       total_clients_found: scheduledClients.length,
       drafts_created: 0,
       auto_sent: 0,
+      skipped_duplicate: 0,
+      details: [] as Array<{
+        client_id: string;
+        status: string;
+        report_id?: string;
+        existing_report_id?: string;
+      }>,
       errors: [] as Array<{ client_id: string; error: string }>,
     };
 
@@ -108,6 +116,28 @@ Deno.serve(async (req: Request) => {
     // 4. Process Each Client (Isolated Error Handling per client)
     for (const client of scheduledClients) {
       try {
+        // Idempotency: verify if a report already exists for this client in the current ISO week (draft, approved, or sent)
+        // A direct send (bypass) or draft must NEVER execute twice for the same client in the same week.
+        const { data: existingReports } = await supabase
+          .from('reports')
+          .select('id, status, period_start, period_end, created_at')
+          .eq('client_id', client.id)
+          .in('status', ['draft', 'approved', 'sent']);
+
+        const duplicateReport = findExistingWeekReport(existingReports ?? [], now);
+        if (duplicateReport) {
+          console.log(
+            `[dispatch-scheduled-reports] Client '${client.id}' already has a report for this week (report ${duplicateReport.id}, status: ${duplicateReport.status}). Skipping duplicate.`
+          );
+          results.skipped_duplicate++;
+          results.details.push({
+            client_id: client.id,
+            status: 'skipped_duplicate',
+            existing_report_id: duplicateReport.id,
+          });
+          continue;
+        }
+
         // Extract agency's GitHub PAT
         const agency = Array.isArray(client.agencies) ? client.agencies[0] : client.agencies;
         const integration = Array.isArray(agency?.github_integrations)
@@ -282,6 +312,11 @@ Deno.serve(async (req: Request) => {
         }
 
         results.drafts_created++;
+        results.details.push({
+          client_id: client.id,
+          status: isBypass ? 'auto_sent' : 'draft_created',
+          report_id: newReport.id,
+        });
       } catch (clientErr: unknown) {
         const errorMsg = clientErr instanceof Error ? clientErr.message : String(clientErr);
         results.errors.push({

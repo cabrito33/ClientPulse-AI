@@ -102,7 +102,7 @@ function mapClient(row: ClientRow): Client {
       : "Sexta-feira";
 
   // Convert UTC hour → "HH:00" string in UTC (UI shows UTC for now).
-  const sendTime = `${String(row.schedule_hour_utc).padStart(2, "0")}:00`;
+  const sendTime = `${String(row.schedule_hour_utc).padStart(2, "0")}:00 UTC`;
 
   // Derive avatar initials from name (first letters of first two words).
   const initials = row.name

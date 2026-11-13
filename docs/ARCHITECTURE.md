@@ -233,6 +233,7 @@ Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.s
    ```
 
 4. **Ativar o agendamento cron horário em Produção:**
+   Ver script completo em `supabase/cron/schedule_dispatch.sql`. Executar no SQL Editor:
    ```sql
    CREATE EXTENSION IF NOT EXISTS "pg_cron";
    CREATE EXTENSION IF NOT EXISTS "pg_net";
@@ -247,7 +248,7 @@ Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.s
        '0 * * * *',
        $$
        SELECT net.http_post(
-           url := 'https://rewurbzemhydcqhmornx.supabase.co/functions/v1/dispatch-scheduled-reports',
+           url := 'https://<PROJECT_REF>.supabase.co/functions/v1/dispatch-scheduled-reports',
            headers := jsonb_build_object(
                'Content-Type', 'application/json',
                'X-Scheduled-Secret', (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'scheduled_function_secret' LIMIT 1)
@@ -258,7 +259,35 @@ Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.s
    );
    ```
 
-5. **Garantias de Segurança:**
+5. **Comandos de Verificação e Monitorização do Cron:**
+   No SQL Editor do Supabase, execute para verificar a configuração e histórico de execuções:
+   ```sql
+   -- Listar jobs agendados
+   SELECT * FROM cron.job;
+
+   -- Consultar os últimos 5 registos de execução detalhados
+   SELECT * FROM cron.job_run_details ORDER BY start_time DESC LIMIT 5;
+   ```
+
+6. **Disparo Manual do Dispatcher via PowerShell (para testes e auditoria):**
+   Para testar manualmente o envio agendado de um dia e hora específicos sem esperar pelo cron:
+   ```powershell
+   $Headers = @{
+       "Content-Type" = "application/json"
+       "X-Scheduled-Secret" = "<SCHEDULED_FUNCTION_SECRET>"
+   }
+   $Body = @{
+       target_day = 5          # 0 = Domingo, 5 = Sexta-feira
+       target_hour_utc = 9     # Hora em formato UTC (0-23)
+   } | ConvertTo-Json
+
+   Invoke-RestMethod -Uri "https://<PROJECT_REF>.supabase.co/functions/v1/dispatch-scheduled-reports" `
+       -Method Post `
+       -Headers $Headers `
+       -Body $Body
+   ```
+
+7. **Garantias de Segurança:**
    - Nenhum segredo real é guardado em repositório ou migrações versionadas.
    - O `pg_net` obtém o segredo desencriptado em tempo de execução via `vault.decrypted_secrets`.
    - A Edge Function `dispatch-scheduled-reports` valida `req.headers.get('X-Scheduled-Secret') === Deno.env.get('SCHEDULED_FUNCTION_SECRET')` antes de processar qualquer cliente.

@@ -170,7 +170,9 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
               </div>
               <div className="flex justify-between">
                 <dt className="text-muted">Dia e hora</dt>
-                <dd className="font-medium text-ink-soft">{client.sendDay} às {client.sendTime}</dd>
+                <dd className="font-medium text-ink-soft">
+                  {client.sendDay} às {client.sendTime.includes("UTC") ? client.sendTime : `${client.sendTime} UTC`}
+                </dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-muted">Tom de escrita</dt>

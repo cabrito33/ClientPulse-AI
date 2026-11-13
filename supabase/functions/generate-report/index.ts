@@ -21,6 +21,7 @@ import { fetchBoardTasks } from '../_shared/github.ts';
 import { generateExecutiveReport } from '../_shared/gemini.ts';
 import { decryptPat } from '../_shared/crypto.ts';
 import { sendReportEmail } from '../_shared/resend.ts';
+import { findExistingWeekReport } from '../_shared/idempotency.ts';
 
 Deno.serve(async (req: Request) => {
   // 1. Handle CORS preflight
@@ -242,17 +243,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Helper to calculate ISO week and year to prevent duplicate drafts for the same week
-    const getIsoWeekYear = (d: Date): { year: number; week: number } => {
-      const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-      date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
-      const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-      const weekNo = Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-      return { year: date.getUTCFullYear(), week: weekNo };
-    };
-
-    const currentIso = getIsoWeekYear(periodEnd);
-
     // Check if an existing draft report exists for this client in the same week
     const { data: existingDrafts } = await supabase
       .from('reports')
@@ -260,11 +250,7 @@ Deno.serve(async (req: Request) => {
       .eq('client_id', client.id)
       .eq('status', 'draft');
 
-    const matchingDraft = (existingDrafts || []).find((d: { id: string; period_start: string; period_end: string; created_at: string }) => {
-      const targetDate = d.period_end ? new Date(d.period_end) : new Date(d.created_at);
-      const targetIso = getIsoWeekYear(targetDate);
-      return targetIso.year === currentIso.year && targetIso.week === currentIso.week;
-    });
+    const matchingDraft = findExistingWeekReport(existingDrafts || [], periodEnd);
 
     let report: { id: string };
 
