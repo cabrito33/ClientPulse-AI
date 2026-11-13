@@ -27,6 +27,12 @@ export interface Client {
   projectName: string;
   avatarInitials: string;
   startedAt: string;
+  githubProjectId?: string;
+  columnMapping?: {
+    done?: string[];
+    in_progress?: string[];
+    blocked?: string[];
+  };
 }
 
 export interface ReportSection {
@@ -55,6 +61,8 @@ export interface Report {
   authorNote?: string;
   errorMessage?: string | null;
   generatedWithoutAi?: boolean;
+  unmappedColumns?: string[];
+  ignoredTasksCount?: number;
 }
 
 export interface SprintMetric {

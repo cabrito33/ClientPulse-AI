@@ -7,6 +7,7 @@ import { buttonClass } from "@/components/ui/button";
 import { CompletedBySprintChart } from "@/components/dashboard/charts";
 import { GenerateReportButton } from "@/components/dashboard/generate-report-button";
 import { ClientAutoSendToggle } from "@/components/dashboard/client-autosend-toggle";
+import { ClientColumnMappingCard } from "@/components/dashboard/client-column-mapping";
 import { formatDate } from "@/lib/utils";
 
 interface ClientPageProps {
@@ -170,6 +171,12 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
               <ClientAutoSendToggle clientId={client.id} initialAutoSend={client.autoSend} />
             </dl>
           </section>
+
+          <ClientColumnMappingCard
+            clientId={client.id}
+            projectId={client.githubProjectId}
+            initialMapping={client.columnMapping}
+          />
 
           {metrics.length > 0 && (
             <section className="rounded-2xl border border-line bg-surface p-5">

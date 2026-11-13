@@ -392,19 +392,54 @@ export async function fetchProjectColumns(pat: string, projectId: string) {
   };
 }
 
+export interface ColumnMappingConfig {
+  done?: string[] | string;
+  in_progress?: string[] | string;
+  blocked?: string[] | string;
+}
+
+/**
+ * Categorizes a task's status into one of the 3 report categories ('done', 'in_progress', 'blocked')
+ * or 'other' (unmapped / ignored).
+ * Normalizes input cases, trims whitespace, and supports array or string configuration (BE-07 / Issue #21).
+ */
+export function categorizeTaskStatus(
+  statusName: string,
+  mapping: ColumnMappingConfig = {}
+): 'done' | 'in_progress' | 'blocked' | 'other' {
+  const normalize = (cols: unknown, defaults: string[]): string[] => {
+    if (Array.isArray(cols)) return cols.map((c) => String(c).trim().toLowerCase()).filter(Boolean);
+    if (typeof cols === 'string' && cols.trim()) return [cols.trim().toLowerCase()];
+    return defaults.map((d) => d.toLowerCase());
+  };
+
+  const doneCols = normalize(mapping.done, ['done', 'concluído', 'concluido', 'complete', 'finished']);
+  const inProgCols = normalize(mapping.in_progress, ['in progress', 'em progresso', 'em curso', 'doing']);
+  const blockedCols = normalize(mapping.blocked, ['blocked', 'bloqueado', 'needs review', 'impedimento']);
+
+  const lower = (statusName || '').trim().toLowerCase();
+  if (doneCols.includes(lower)) return 'done';
+  if (inProgCols.includes(lower)) return 'in_progress';
+  if (blockedCols.includes(lower)) return 'blocked';
+  return 'other';
+}
+
 /**
  * 4. Fetch all board items and categorize them using the client's column mapping.
  */
 export async function fetchBoardTasks(
   pat: string,
   projectId: string,
-  columnMapping: { done?: string[]; in_progress?: string[]; blocked?: string[] } = {},
+  columnMapping: ColumnMappingConfig = {},
   daysAgo: number = 7
 ): Promise<{
   all: GitHubTaskItem[];
   done: GitHubTaskItem[];
   inProgress: GitHubTaskItem[];
   blocked: GitHubTaskItem[];
+  other: GitHubTaskItem[];
+  unmappedColumns: string[];
+  ignoredTasksCount: number;
 }> {
   const query = `
     query($projectId: ID!, $first: Int!, $after: String) {
@@ -521,11 +556,6 @@ export async function fetchBoardTasks(
     cursor = itemsConnection?.pageInfo?.endCursor ?? null;
   }
 
-  // Normalize column mapping names to lowercase for comparison
-  const doneColumns = (columnMapping.done ?? ['done', 'concluído', 'concluido']).map((c) => c.toLowerCase());
-  const inProgressColumns = (columnMapping.in_progress ?? ['in progress', 'em progresso', 'em curso']).map((c) => c.toLowerCase());
-  const blockedColumns = (columnMapping.blocked ?? ['blocked', 'bloqueado', 'needs review', 'impedimento']).map((c) => c.toLowerCase());
-
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - daysAgo);
 
@@ -545,17 +575,8 @@ export async function fetchBoardTasks(
       }
     }
 
-    // Determine status category
-    const lowerStatus = statusName.toLowerCase();
-    let category: 'done' | 'in_progress' | 'blocked' | 'other' = 'other';
-
-    if (doneColumns.includes(lowerStatus)) {
-      category = 'done';
-    } else if (inProgressColumns.includes(lowerStatus)) {
-      category = 'in_progress';
-    } else if (blockedColumns.includes(lowerStatus)) {
-      category = 'blocked';
-    }
+    // Determine status category via dynamic mapping (BE-07)
+    const category = categorizeTaskStatus(statusName, columnMapping);
 
     // Extract metadata
     const assignees = content.assignees?.nodes?.map((a: { login: string }) => a.login) ?? [];
@@ -583,14 +604,34 @@ export async function fetchBoardTasks(
   // - Done: items marked done that were closed or updated within the last 7 days (or currently in Done)
   // - In Progress: items currently in progress
   // - Blocked: items currently blocked
+  // - Other: unmapped items ignored with notice
   const done = parsedTasks.filter((t) => t.statusCategory === 'done');
   const inProgress = parsedTasks.filter((t) => t.statusCategory === 'in_progress');
   const blocked = parsedTasks.filter((t) => t.statusCategory === 'blocked');
+  const other = parsedTasks.filter((t) => t.statusCategory === 'other');
+
+  // Identify distinct unmapped columns that contained actual cards
+  const unmappedColumns = Array.from(
+    new Set(
+      other
+        .map((t) => t.status)
+        .filter((s) => s && s !== 'No Status')
+    )
+  );
+
+  if (unmappedColumns.length > 0) {
+    console.warn(
+      `[github] Aviso: ${other.length} tarefas ignoradas por pertencerem a colunas não mapeadas: ${unmappedColumns.join(', ')}.`
+    );
+  }
 
   return {
     all: parsedTasks,
     done,
     inProgress,
     blocked,
+    other,
+    unmappedColumns,
+    ignoredTasksCount: other.length,
   };
 }

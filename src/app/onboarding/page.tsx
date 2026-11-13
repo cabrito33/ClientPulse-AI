@@ -15,6 +15,7 @@ import {
   Send,
   Loader2,
   ShieldCheck,
+  AlertTriangle,
 } from "lucide-react";
 import {
   sendOnboardingMessageAction,
@@ -645,6 +646,30 @@ export default function OnboardingPage() {
                 </div>
               </div>
             )}
+
+            {/* Aviso de colunas não mapeadas (BE-07 / Issue #21) */}
+            {(() => {
+              const allCols = selectedProject?.columns || [];
+              const mappedCols = new Set([columnMap.done, columnMap.in_progress, columnMap.blocked]);
+              const unmappedCols = allCols.filter((c) => !mappedCols.has(c));
+              if (unmappedCols.length === 0) return null;
+              return (
+                <div
+                  role="region"
+                  aria-label="Aviso de colunas não mapeadas"
+                  className="mt-5 flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-900 dark:text-amber-200"
+                >
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" aria-hidden="true" />
+                  <div>
+                    <p className="font-semibold text-ink">Colunas não mapeadas serão ignoradas ({unmappedCols.length}):</p>
+                    <p className="mt-0.5 font-medium">{unmappedCols.join(", ")}</p>
+                    <p className="mt-1 text-[11px] opacity-80">
+                      As tarefas pertencentes a estas colunas (ex.: backlog, triagem) serão totalmente ignoradas e excluídas dos relatórios executivos gerados.
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="mt-8 flex justify-between">
               <button

@@ -310,6 +310,29 @@ export function ReportReview({
         </div>
       )}
 
+      {report.unmappedColumns && report.unmappedColumns.length > 0 && (
+        <div
+          role="note"
+          aria-label="Aviso de colunas não mapeadas"
+          className="mt-4 flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-[13px] text-ink"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+          <div className="flex-1 text-[12px] leading-relaxed text-muted">
+            <p className="font-semibold text-ink">
+              Colunas não mapeadas ignoradas neste relatório ({report.unmappedColumns.length})
+            </p>
+            <p className="mt-0.5">
+              As seguintes colunas do board do GitHub não estão mapeadas: <span className="font-medium text-ink">{report.unmappedColumns.join(", ")}</span>.
+              {report.ignoredTasksCount !== undefined && report.ignoredTasksCount > 0 ? (
+                <> Foram excluídas {report.ignoredTasksCount} tarefas que não pertencem a nenhuma das 3 categorias do relatório.</>
+              ) : (
+                <> As tarefas nestas colunas foram excluídas e não constam no rascunho.</>
+              )}
+            </p>
+          </div>
+        </div>
+      )}
+
       {state === "failed" && (
         <div
           role="alert"

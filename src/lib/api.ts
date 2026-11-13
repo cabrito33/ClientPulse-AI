@@ -111,6 +111,21 @@ function mapClient(row: ClientRow): Client {
     .map((w) => w[0]?.toUpperCase() ?? "")
     .join("");
 
+  let columnMapping: { done?: string[]; in_progress?: string[]; blocked?: string[] } | undefined = undefined;
+  if (row.column_mapping && typeof row.column_mapping === "object" && !Array.isArray(row.column_mapping)) {
+    const raw = row.column_mapping as Record<string, unknown>;
+    const toArr = (v: unknown): string[] => {
+      if (Array.isArray(v)) return v.map(String).filter(Boolean);
+      if (typeof v === "string" && v.trim()) return [v.trim()];
+      return [];
+    };
+    columnMapping = {
+      done: toArr(raw.done),
+      in_progress: toArr(raw.in_progress),
+      blocked: toArr(raw.blocked),
+    };
+  }
+
   return {
     id: row.id,
     name: row.name,
@@ -129,6 +144,8 @@ function mapClient(row: ClientRow): Client {
     projectName: `${row.github_project_owner}/${row.github_project_id}`,
     avatarInitials: initials,
     startedAt: row.created_at.slice(0, 10),
+    githubProjectId: row.github_project_id,
+    columnMapping,
   };
 }
 
@@ -205,6 +222,13 @@ function mapReport(row: ReportRow, customErrorMessage?: string | null): Report {
     openedAt: null, // delivery tracking not yet in schema
     errorMessage,
     generatedWithoutAi,
+    unmappedColumns: Array.isArray(rawObj?.unmapped_columns)
+      ? (rawObj.unmapped_columns as unknown[]).map(String)
+      : undefined,
+    ignoredTasksCount:
+      typeof rawObj?.ignored_tasks_count === "number"
+        ? rawObj.ignored_tasks_count
+        : undefined,
   };
 }
 

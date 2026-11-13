@@ -212,7 +212,15 @@ Deno.serve(async (req: Request) => {
       model_used: modelUsed,
       generated_without_ai: generatedWithoutAi,
       ai_error: aiErrorMessage,
+      unmapped_columns: tasks.unmappedColumns ?? [],
+      ignored_tasks_count: tasks.ignoredTasksCount ?? 0,
     };
+
+    if (tasks.unmappedColumns && tasks.unmappedColumns.length > 0) {
+      console.warn(
+        `[generate-report] Client '${client.id}': ${tasks.ignoredTasksCount} tarefas ignoradas em colunas não mapeadas (${tasks.unmappedColumns.join(', ')}).`
+      );
+    }
 
     // Helper to calculate ISO week and year to prevent duplicate drafts for the same week
     const getIsoWeekYear = (d: Date): { year: number; week: number } => {
@@ -358,7 +366,10 @@ Deno.serve(async (req: Request) => {
           done: tasks.done.length,
           in_progress: tasks.inProgress.length,
           blocked: tasks.blocked.length,
+          ignored: tasks.ignoredTasksCount ?? 0,
         },
+        unmapped_columns: tasks.unmappedColumns ?? [],
+        ignored_tasks_count: tasks.ignoredTasksCount ?? 0,
       }),
       { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

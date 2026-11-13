@@ -324,6 +324,21 @@ Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.s
   - Caso o modelo Gemini falhe e ocorra agregação em bruto de tarefas (`generatedWithoutAi = true`), o bypass é **abortado automaticamente**, forçando o relatório a permanecer em "Pendente de revisão" para impedir o envio não supervisionado de texto cru.
 - **Suíte de Testes:** Script de validação `scripts/test-bypass-logic.mjs` executável via `npm test`.
 
+### 5.11 Mapeamento Dinâmico de Colunas e Tratamento de Colunas Ignoradas (BE-07 / Issue #21)
+- **Persistência por Cliente:** Configurado no campo `clients.column_mapping JSONB NOT NULL DEFAULT ...` com chaves normalizadas para as 3 categorias nucleares:
+  - `done`: Lista de colunas associadas a tarefas concluídas ("O que foi feito").
+  - `in_progress`: Lista de colunas em desenvolvimento ("Em curso / Próximos passos").
+  - `blocked`: Lista de colunas com impedimentos ou à espera do cliente ("Impedimentos").
+- **UI/Configuração Visual:**
+  - Na Ficha do Cliente (`/dashboard/clients/[id]`), o componente `ClientColumnMappingCard` permite visualizar e atualizar a associação de cada coluna detetada no board do GitHub Projects via `saveColumnMappingAction`.
+  - No Onboarding (`/onboarding`), o passo 2 permite associar as colunas do board selecionado com auto-mapeamento inteligente.
+- **Tratamento de Colunas Ignoradas com Aviso (Critério 3):**
+  - Todas as colunas do board que não estejam associadas a nenhuma das 3 categorias (como *Backlog*, *Triagem*, *Icebox*) são categorizadas como `'other'` pela função `categorizeTaskStatus` em `_shared/github.ts`.
+  - As tarefas nestas colunas são estritamente excluídas das 3 secções do relatório gerado.
+  - A interface apresenta um aviso explícito e proeminente (com destaque âmbar) listando as colunas ignoradas e informando o utilizador de que os seus cartões não serão contabilizados nem transmitidos à IA.
+  - A Edge Function `generate-report` regista `unmapped_columns` e `ignored_tasks_count` em `reports.raw_github_data` e emite alertas nos logs de execução.
+- **Suíte de Testes:** Script de validação `scripts/test-column-mapping.mjs` integrado em `npm test`.
+
 ---
 
 ## 6. Technical Risks & Mitigation Strategies
