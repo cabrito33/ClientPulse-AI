@@ -339,6 +339,22 @@ Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.s
   - A Edge Function `generate-report` regista `unmapped_columns` e `ignored_tasks_count` em `reports.raw_github_data` e emite alertas nos logs de execução.
 - **Suíte de Testes:** Script de validação `scripts/test-column-mapping.mjs` integrado em `npm test`.
 
+### 5.12 Webhook e Tracking de Abertura de E-mail (openedAt) (BE-21 / Issue #35)
+- **Persistência na Base de Dados:** Coluna `public.reports.opened_at TIMESTAMPTZ` (criada e indexada na migração `008_be_21_opened_at.sql`), indicando a data/hora do primeiro acesso do cliente.
+- **Mecanismos de Deteção:**
+  1. **Pixel de Tracking (GET /api/track/open):** Imagem GIF 1x1 transparente (43 bytes, `Cache-Control: no-store`) embutida automaticamente no HTML do e-mail transacional (`buildReportEmailHtml`).
+  2. **Webhook Resend (POST /api/webhooks/resend):** Trata eventos `email.opened` da API do Resend através da tag `report_id`.
+  3. **Acesso ao Portal (GET /portal/[token]):** Ao carregar o portal seguro sem login, o relatório mais recente do cliente é assinalado como aberto se ainda não o tiver sido.
+- **Idempotência Estrita (Critério 3):**
+  - A função `recordReportOpen` executa uma atualização atómica condicional (`.is("opened_at", null)` ou stored procedure `record_report_open`).
+  - Pedidos repetidos (múltiplas aberturas do mesmo e-mail ou do portal) **nunca** sobrescrevem a data e hora do primeiro registo.
+- **Visibilidade no Dashboard (Critério 2):**
+  - Mapeado em `Report.openedAt` em `src/lib/api.ts`.
+  - Apresentado na Visão Geral do Dashboard (último envio com indicação de abertura).
+  - Apresentado na Ficha do Cliente (`/dashboard/clients/[id]`) com crachá "Aberto" e data exata.
+  - Apresentado na página de Revisão do Relatório (`/dashboard/reports/[id]`) no painel "Estado de Envio e Abertura".
+- **Suíte de Testes:** Script de validação `scripts/test-open-tracking.mjs` integrado em `npm test`.
+
 ---
 
 ## 6. Technical Risks & Mitigation Strategies

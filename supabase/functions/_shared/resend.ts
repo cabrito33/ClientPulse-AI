@@ -23,6 +23,7 @@ export interface SendReportEmailOptions {
   summaryBlockers: string;
   summaryNextSteps: string;
   portalToken: string;
+  reportId?: string;
   appUrl?: string;
   language?: 'pt' | 'en';
 }
@@ -34,6 +35,9 @@ export function buildReportEmailHtml(options: SendReportEmailOptions): string {
   const isPt = options.language !== 'en';
   const baseUrl = (options.appUrl || 'http://localhost:3000').replace(/\/$/, '');
   const portalUrl = `${baseUrl}/portal?token=${options.portalToken}`;
+  const trackingPixelUrl = `${baseUrl}/api/track/open?${
+    options.reportId ? `reportId=${options.reportId}` : `token=${options.portalToken}`
+  }`;
 
   const labels = isPt
     ? {
@@ -154,6 +158,13 @@ export function buildReportEmailHtml(options: SendReportEmailOptions): string {
             </td>
           </tr>
 
+          <!-- Open Tracking Pixel (BE-21) -->
+          <tr>
+            <td style="display:none !important;visibility:hidden;mso-hide:all;font-size:1px;color:#ffffff;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
+              <img src="${trackingPixelUrl}" width="1" height="1" alt="" style="display:none;width:1px;height:1px;border:0;" />
+            </td>
+          </tr>
+
         </table>
       </td>
     </tr>
@@ -202,6 +213,7 @@ export async function sendReportEmail(options: SendReportEmailOptions): Promise<
       to: [options.toEmail],
       subject,
       html: htmlContent,
+      tags: options.reportId ? [{ name: 'report_id', value: options.reportId }] : undefined,
     }),
   });
 

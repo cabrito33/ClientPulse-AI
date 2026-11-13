@@ -10,7 +10,8 @@
     "test:security": "node --experimental-strip-types scripts/test-runtime-security.mjs",
     "test:bypass": "node scripts/test-bypass-logic.mjs",
     "test:mapping": "node scripts/test-column-mapping.mjs",
-    "test": "npm run test:security && npm run test:bypass && npm run test:mapping",
+    "test:tracking": "node scripts/test-open-tracking.mjs",
+    "test": "npm run test:security && npm run test:bypass && npm run test:mapping && npm run test:tracking",
     "check:use-server": "node scripts/check-use-server.mjs",
     "check": "npm run lint && npx tsc --noEmit && npm run check:use-server && npm run test && cross-env NEXT_DIST_DIR=.next-check next build"
   },

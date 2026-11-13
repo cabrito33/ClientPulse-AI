@@ -185,9 +185,20 @@ export function ReportReview({
               Rever relatório
             </h1>
             {state === "sent" ? (
-              <Badge tone="teal" dot>
-                Enviado
-              </Badge>
+              <>
+                <Badge tone="teal" dot>
+                  Enviado
+                </Badge>
+                {report.openedAt ? (
+                  <Badge tone="teal">
+                    Aberto pelo cliente
+                  </Badge>
+                ) : (
+                  <Badge tone="muted">
+                    Ainda não aberto
+                  </Badge>
+                )}
+              </>
             ) : state === "failed" ? (
               <Badge tone="accent" dot>
                 Falha no envio
@@ -209,6 +220,8 @@ export function ReportReview({
               ? "gerado a partir de tarefas em bruto (sem IA)"
               : "gerado por IA"}{" "}
             a {formatDateTime(report.generatedAt)}
+            {report.sentAt && ` · enviado a ${formatDateTime(report.sentAt)}`}
+            {report.openedAt && ` · aberto pelo cliente a ${formatDateTime(report.openedAt)}`}
           </p>
         </div>
 
@@ -505,6 +518,33 @@ export function ReportReview({
                 : "Desligado: cada rascunho espera pela tua aprovação. Recomendado."}
             </p>
           </section>
+
+          {state === "sent" && (
+            <section className="rounded-2xl border border-line bg-surface p-5">
+              <h2 className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-soft">
+                Estado de Envio e Abertura
+              </h2>
+              <dl className="mt-3 space-y-2.5 text-[12.5px]">
+                <Row k="Estado" v="Enviado ao cliente" />
+                {report.sentAt && <Row k="Data de envio" v={formatDateTime(report.sentAt)} />}
+                <Row
+                  k="Primeira abertura"
+                  v={report.openedAt ? formatDateTime(report.openedAt) : "Ainda não aberto"}
+                />
+              </dl>
+              <div className="mt-3.5 rounded-lg bg-paper p-3 text-[11px] text-muted leading-relaxed">
+                {report.openedAt ? (
+                  <p className="text-teal font-medium">
+                    ✓ O cliente abriu o relatório via e-mail ou portal.
+                  </p>
+                ) : (
+                  <p>
+                    O tracking de abertura (pixel ou webhook) registará automaticamente o primeiro acesso do cliente.
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
 
           <section className="rounded-2xl border border-line bg-surface p-5">
             <h2 className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-soft">

@@ -8,7 +8,7 @@ import { CompletedBySprintChart } from "@/components/dashboard/charts";
 import { GenerateReportButton } from "@/components/dashboard/generate-report-button";
 import { ClientAutoSendToggle } from "@/components/dashboard/client-autosend-toggle";
 import { ClientColumnMappingCard } from "@/components/dashboard/client-column-mapping";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 
 interface ClientPageProps {
   params: Promise<{ id: string }>;
@@ -115,22 +115,32 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge
-                    tone={
-                      r.status === "sent"
-                        ? "teal"
-                        : r.status === "failed"
-                        ? "accent"
-                        : "gold"
-                    }
-                    dot
-                  >
-                    {r.status === "sent"
-                      ? "Enviado"
-                      : r.status === "failed"
-                      ? "Falha no envio"
-                      : "Pendente de revisão"}
-                  </Badge>
+                  {r.status === "sent" ? (
+                    r.openedAt ? (
+                      <span title={`Aberto pelo cliente em ${formatDateTime(r.openedAt)}`}>
+                        <Badge tone="teal" dot>
+                          Aberto
+                        </Badge>
+                      </span>
+                    ) : (
+                      <Badge tone="teal" dot>
+                        Enviado
+                      </Badge>
+                    )
+                  ) : r.status === "failed" ? (
+                    <Badge tone="accent" dot>
+                      Falha no envio
+                    </Badge>
+                  ) : (
+                    <Badge tone="gold" dot>
+                      Pendente de revisão
+                    </Badge>
+                  )}
+                  {r.status === "sent" && r.openedAt && (
+                    <span className="text-[11.5px] text-teal font-medium" title={formatDateTime(r.openedAt)}>
+                      Aberto a {formatDate(r.openedAt)}
+                    </span>
+                  )}
                   <Link
                     href={`/dashboard/reports/${r.id}`}
                     className="text-xs font-medium text-accent hover:underline"

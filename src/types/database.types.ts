@@ -208,6 +208,7 @@ export interface Database {
           raw_github_data: Json | null;
           approved_at: string | null;
           sent_at: string | null;
+          opened_at: string | null;
           email_delivery_id: string | null;
           created_at: string;
           updated_at: string;
@@ -225,6 +226,7 @@ export interface Database {
           raw_github_data?: Json | null;
           approved_at?: string | null;
           sent_at?: string | null;
+          opened_at?: string | null;
           email_delivery_id?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -242,6 +244,7 @@ export interface Database {
           raw_github_data?: Json | null;
           approved_at?: string | null;
           sent_at?: string | null;
+          opened_at?: string | null;
           email_delivery_id?: string | null;
           created_at?: string;
           updated_at?: string;

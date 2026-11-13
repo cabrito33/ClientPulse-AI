@@ -219,7 +219,7 @@ function mapReport(row: ReportRow, customErrorMessage?: string | null): Report {
     tasksPlanned,
     generatedAt: row.created_at,
     sentAt: row.sent_at ?? null,
-    openedAt: null, // delivery tracking not yet in schema
+    openedAt: row.opened_at ?? null,
     errorMessage,
     generatedWithoutAi,
     unmappedColumns: Array.isArray(rawObj?.unmapped_columns)
@@ -542,10 +542,21 @@ export async function getPortalData(
     const client = mapClient(payload.client);
     const reports = (payload.reports ?? []).map((r) => mapReport(r));
     const metrics = (payload.metrics ?? []).map(mapSprintMetric);
+    const current = reports[0] ?? null;
+
+    // Automatically record first open on portal access (idempotent, BE-21)
+    if (current && !current.openedAt) {
+      try {
+        await recordReportOpen(current.id);
+        current.openedAt = new Date().toISOString();
+      } catch {
+        // Ignore error to avoid blocking portal rendering
+      }
+    }
 
     return {
       client,
-      current: reports[0] ?? null,
+      current,
       history: reports,
       metrics,
     };
@@ -566,9 +577,19 @@ export async function getPortalData(
     getSprintMetrics(client.id),
   ]);
 
+  const current = history[0] ?? null;
+  if (current && !current.openedAt) {
+    try {
+      await recordReportOpen(current.id);
+      current.openedAt = new Date().toISOString();
+    } catch {
+      // Ignore error to avoid blocking portal rendering
+    }
+  }
+
   return {
     client,
-    current: history[0] ?? null,
+    current,
     history,
     metrics,
   };
@@ -1021,6 +1042,7 @@ export async function updateClientAutoSend(
 
 /**
  * Records the first opened_at timestamp for a report (idempotent).
+ * Enforces acceptance criteria 1 and 3: records first open, repeated calls never overwrite.
  */
 export async function recordReportOpen(
   reportId: string,
@@ -1029,6 +1051,7 @@ export async function recordReportOpen(
   const supabase = await createClient();
   const openedAtTime = timestamp || new Date().toISOString();
 
+  // 1. Fetch current status
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: existing } = await (supabase.from("reports") as any)
     .select("id, opened_at")
@@ -1048,15 +1071,34 @@ export async function recordReportOpen(
     };
   }
 
+  // 2. Atomic conditional update: only update if opened_at IS STILL NULL (Critério 3: idempotência)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase.from("reports") as any)
+  const { data: updated } = await (supabase.from("reports") as any)
     .update({ opened_at: openedAtTime })
-    .eq("id", reportId);
+    .eq("id", reportId)
+    .is("opened_at", null)
+    .select("id, opened_at")
+    .maybeSingle();
+
+  if (updated && (updated as { opened_at?: string | null }).opened_at) {
+    return {
+      reportId,
+      openedAt: (updated as { opened_at: string }).opened_at,
+      isFirstOpen: true,
+    };
+  }
+
+  // If another concurrent request wrote first, fetch and return the persisted first timestamp
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: latest } = await (supabase.from("reports") as any)
+    .select("id, opened_at")
+    .eq("id", reportId)
+    .maybeSingle();
 
   return {
     reportId,
-    openedAt: openedAtTime,
-    isFirstOpen: true,
+    openedAt: (latest as { opened_at?: string | null })?.opened_at || openedAtTime,
+    isFirstOpen: false,
   };
 }
 

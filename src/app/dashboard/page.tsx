@@ -392,7 +392,11 @@ export default async function DashboardPage() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[13px] font-medium text-ink">{c.name}</p>
                       <p className="truncate text-[11px] text-muted">
-                        {lastSent ? `Último envio: ${formatDateTime(lastSent.sentAt)}` : "Ainda sem relatórios"}
+                        {lastSent
+                          ? lastSent.openedAt
+                            ? `Último: enviado e aberto (${formatDateTime(lastSent.openedAt)})`
+                            : `Último envio: ${formatDateTime(lastSent.sentAt)}`
+                          : "Ainda sem relatórios"}
                       </p>
                     </div>
                     <span

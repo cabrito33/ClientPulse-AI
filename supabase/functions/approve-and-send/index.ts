@@ -114,6 +114,7 @@ Deno.serve(async (req: Request) => {
         summaryBlockers,
         summaryNextSteps,
         portalToken: client.portal_token,
+        reportId: report.id,
         appUrl,
         language: (client.language as 'pt' | 'en') ?? 'pt',
       });
