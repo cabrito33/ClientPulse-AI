@@ -122,10 +122,26 @@ A aplicação fica disponível em http://localhost:3000.
 ### Scripts úteis
 
 ```bash
-npm run lint          # análise estática
-npx tsc --noEmit      # verificação de tipos
-npm run build         # build de produção
+npm run lint          # análise estática (ESLint)
+npx tsc --noEmit      # verificação estrita de tipos
+npm test              # suíte de testes automatizados (segurança, bypass, mapeamento, tracking, idempotência, e-mail)
+npm run check         # pipeline completo: lint + tsc + check:use-server + test + build de produção
+npm run build         # build de produção Next.js
 ```
+
+---
+
+## Testes e Qualidade (DO-04 & DO-05)
+
+- **Testes Automatizados (DO-04):** Executados através de `npm test` em Node.js 22, cobrindo:
+  - `test:security` (BE-09): Validação de allowlist em runtime e bloqueio de leitura de código-fonte.
+  - `test:bypass` (BE-16): Lógica de aprovação manual vs. envio automático direto.
+  - `test:mapping` (BE-07): Mapeamento dinâmico de colunas e exclusão de colunas não mapeadas.
+  - `test:tracking` (BE-21): Idempotência do carimbo `openedAt`, webhooks e pixel 1x1.
+  - `test:dispatch` (BE-15/BE-16): Idempotência do despachador horário e prevenção de envios duplicados na mesma semana.
+  - `test:email` (DO-04): Validação do URL canónico do portal `<appUrl>/portal/<token>` em PT e EN.
+- **Testes End-to-End (DO-05):** Fora do âmbito do MVP de 17/11/2026. Fica registado como evolução futura (testes E2E com Playwright/Cypress simulando fluxos completos em ambiente de staging).
+- **Integração Contínua (CI):** O workflow do GitHub Actions (`.github/workflows/ci.yml`) corre em Node.js 22, validando lint, tipagem estrita, conformidade de server actions, todos os testes unitários e de integração (`npm test`) e compilação do Next.js.
 
 ---
 

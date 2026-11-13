@@ -12,7 +12,8 @@
     "test:mapping": "node scripts/test-column-mapping.mjs",
     "test:tracking": "node scripts/test-open-tracking.mjs",
     "test:dispatch": "node scripts/test-dispatch-idempotency.mjs",
-    "test": "npm run test:security && npm run test:bypass && npm run test:mapping && npm run test:tracking && npm run test:dispatch",
+    "test:email": "node scripts/test-email-link.mjs",
+    "test": "npm run test:security && npm run test:bypass && npm run test:mapping && npm run test:tracking && npm run test:dispatch && npm run test:email",
     "check:use-server": "node scripts/check-use-server.mjs",
     "check": "npm run lint && npx tsc --noEmit && npm run check:use-server && npm run test && cross-env NEXT_DIST_DIR=.next-check next build"
   },
