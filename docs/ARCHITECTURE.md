@@ -296,6 +296,20 @@ Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.s
   - Ações de Geração no Dashboard: Legenda identificando síntese por IA restrita a metadados.
 - **Human-in-the-Loop:** Todos os relatórios gerados por IA iniciam como rascunhos (`draft`), permitindo ao gestor afinar os 3 blocos antes do disparo ao cliente final.
 
+### 5.9 Validação em Runtime: Bloqueio de Leitura de Código-Fonte (BE-09 / Issue #23)
+- **Mecanismo:** `validateGraphQLQuery` em `supabase/functions/_shared/github.ts`.
+- **Portão Centralizado:** Todas as chamadas à API GraphQL do GitHub passam obrigatoriamente por `executeGitHubGraphQL`, que executa a validação de runtime antes de disparar qualquer pedido de rede.
+- **Allowlist Estrita de Campos ProjectV2:**
+  - Apenas seleções e tipos pertencentes ao modelo de boards, cartões e metadados de tarefas são permitidos (`ALLOWED_GRAPHQL_FIELDS`: `viewer`, `user`, `organization`, `node`, `ProjectV2`, `projectsV2`, `items`, `fieldValues`, `content`, `Issue`, `PullRequest`, `DraftIssue`, etc.).
+  - Qualquer campo não reconhecido resulta no disparo imediato de `SecurityError`.
+- **Blocklist de Código-Fonte (Defense in Depth):**
+  - Termos como `repository`, `blob`, `tree`, `object`, `commit`, `entries`, `file`, `diff`, `patch`, `blame`, `defaultBranchRef` são proíbidos por expressão regular com correspondência de limites de palavra (`\b`).
+- **Garantia de Isolamento de Rede:**
+  - Se um pedido não autorizado for detetado, a execução é interrompida com `SecurityError` antes de qualquer conexão HTTP com o GitHub.
+- **Suíte de Testes Automatizados:**
+  - Script executável: `npm test` / `npm run test:security` (`scripts/test-runtime-security.mjs`).
+  - Integrado em `npm run check` para validação contínua em CI e no fluxo de desenvolvimento.
+
 ---
 
 ## 6. Technical Risks & Mitigation Strategies

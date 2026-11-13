@@ -72,6 +72,10 @@ Para assegurar a confidencialidade e integridade dos dados durante todo o seu ci
    * A função `sanitizeTaskDescription` em `supabase/functions/_shared/github.ts` remove expressões regulares de blocos de código (ex.: `` ```ts ... ``` ``) e fragmentos com backticks antes de qualquer agrupamento.
 4. **Isolamento Multitenant via Row Level Security (RLS):**
    * Todas as tabelas no PostgreSQL (`agencies`, `clients`, `reports`, `report_tasks`, `github_integrations`) possuem políticas RLS ativas vinculadas ao `auth.uid()`, impossibilitando o acesso cruzado de dados entre diferentes agências.
+5. **Validação em Runtime de Consultas GraphQL (Allowlist Estrita - BE-09 / Issue #23):**
+   * Antes de disparar qualquer pedido ao endpoint GraphQL do GitHub, a função `validateGraphQLQuery` analisa estruturalmente a query contra uma allowlist estrita de campos de ProjectV2 (`ALLOWED_GRAPHQL_FIELDS`).
+   * Qualquer tentativa de aceder a ficheiros, blobs, árvores git (`tree`), commits ou repositórios é bloqueada imediatamente em memória com `SecurityError`, impedindo a saída de qualquer pacote HTTP para a infraestrutura do GitHub.
+   * Suíte automatizada de testes de segurança em runtime disponível em `scripts/test-runtime-security.mjs` (`npm test`).
 
 ---
 

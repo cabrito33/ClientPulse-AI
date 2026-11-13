@@ -49,9 +49,183 @@ export function sanitizeTaskDescription(raw: string | null | undefined, maxChars
 }
 
 /**
+ * SecurityError thrown when a runtime security constraint is violated (BE-09).
+ */
+export class SecurityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SecurityError';
+  }
+}
+
+/**
+ * Set of allowed GraphQL selection fields and types for GitHub Projects v2 operations (BE-09).
+ * Only fields relevant to Project boards, cards and metadata are permitted.
+ * Source code, files, blobs, git trees and commits are strictly excluded.
+ */
+export const ALLOWED_GRAPHQL_FIELDS: ReadonlySet<string> = new Set([
+  // Root queries & scopes
+  'viewer',
+  'user',
+  'organization',
+  'node',
+
+  // ProjectV2 types & fields
+  'ProjectV2',
+  'projectsV2',
+  'fields',
+  'ProjectV2SingleSelectField',
+  'options',
+  'color',
+  'items',
+  'fieldValues',
+  'ProjectV2ItemFieldSingleSelectValue',
+  'field',
+
+  // Card Content & Task Metadata
+  'content',
+  'Issue',
+  'PullRequest',
+  'DraftIssue',
+  'assignees',
+  'labels',
+
+  // Pagination & Node wrappers
+  'pageInfo',
+  'hasNextPage',
+  'endCursor',
+  'nodes',
+
+  // Metadata attributes
+  'id',
+  'number',
+  'title',
+  'name',
+  'login',
+  'avatarUrl',
+  'closed',
+  'state',
+  'url',
+  'shortDescription',
+  'body',
+  'bodyText',
+  'updatedAt',
+  'closedAt',
+]);
+
+/**
+ * Set of forbidden source code, repository file, git tree and commit terms (BE-09).
+ * Querying any of these fields triggers an immediate SecurityError rejection.
+ */
+export const FORBIDDEN_SOURCE_CODE_FIELDS: ReadonlySet<string> = new Set([
+  'repository',
+  'repositories',
+  'blob',
+  'blobs',
+  'tree',
+  'trees',
+  'object',
+  'objects',
+  'entries',
+  'entry',
+  'file',
+  'files',
+  'text',
+  'byteSize',
+  'isBinary',
+  'commit',
+  'commits',
+  'history',
+  'diff',
+  'patch',
+  'blame',
+  'ref',
+  'refs',
+  'defaultBranchRef',
+  'target',
+  'tarballUrl',
+  'zipballUrl',
+  'submodule',
+  'release',
+  'releases',
+  'deployKey',
+  'deployKeys',
+  'collaborators',
+]);
+
+const GRAPHQL_KEYWORDS: ReadonlySet<string> = new Set([
+  'query',
+  'mutation',
+  'subscription',
+  'fragment',
+  'on',
+  'true',
+  'false',
+  'null',
+  'String',
+  'Int',
+  'Float',
+  'Boolean',
+  'ID',
+]);
+
+/**
+ * Validates a GraphQL query string at runtime against the strict ProjectV2 allowlist (BE-09).
+ * Throws a SecurityError if the query requests source code, repository files, git trees,
+ * or any unauthorized field outside the allowlist.
+ */
+export function validateGraphQLQuery(query: string): void {
+  if (!query || typeof query !== 'string') {
+    throw new SecurityError('Runtime security violation: GraphQL query must be a non-empty string.');
+  }
+
+  // 1. Direct blocklist check for forbidden repository & source code terms (Defense in Depth)
+  for (const forbidden of FORBIDDEN_SOURCE_CODE_FIELDS) {
+    const regex = new RegExp(`\\b${forbidden}\\b`, 'i');
+    if (regex.test(query)) {
+      throw new SecurityError(
+        `Runtime security violation: GraphQL query attempts to access forbidden source code / repository field: '${forbidden}'. ClientPulse AI policy strictly prohibits reading repository files or source code.`
+      );
+    }
+  }
+
+  // 2. Extract structural selections & identifiers
+  // Strip comments
+  let sanitized = query.replace(/#[^\r\n]*/g, '');
+  // Strip string literals
+  sanitized = sanitized.replace(/"(?:\\.|[^"\\])*"/g, '');
+  // Strip variable / argument lists in parentheses (e.g. `(id: $projectId, first: 10)`)
+  sanitized = sanitized.replace(/\([^)]*\)/g, '');
+  // Strip variable references ($foo)
+  sanitized = sanitized.replace(/\$[a-zA-Z0-9_]+/g, '');
+  // Strip directives (@foo)
+  sanitized = sanitized.replace(/@[a-zA-Z0-9_]+/g, '');
+
+  const tokens = sanitized.match(/[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
+
+  // 3. Verify every identifier against allowlist & GraphQL keywords
+  for (const token of tokens) {
+    if (GRAPHQL_KEYWORDS.has(token)) {
+      continue;
+    }
+
+    if (!ALLOWED_GRAPHQL_FIELDS.has(token)) {
+      throw new SecurityError(
+        `Runtime security violation: Field or type '${token}' is not in the allowed ProjectV2 allowlist. Reading source code or unauthorized fields is strictly prohibited.`
+      );
+    }
+  }
+}
+
+/**
  * Executes a raw GraphQL query against the GitHub API.
  */
 export async function executeGitHubGraphQL(pat: string, query: string, variables: Record<string, unknown> = {}) {
+  // Runtime Security Validation (Issue #23 / BE-09):
+  // Strictly verifies that the query contains ONLY allowed ProjectV2 fields
+  // and NEVER requests repository source code, file blobs, or git trees.
+  validateGraphQLQuery(query);
+
   const response = await fetch(GITHUB_GRAPHQL_ENDPOINT, {
     method: 'POST',
     headers: {
