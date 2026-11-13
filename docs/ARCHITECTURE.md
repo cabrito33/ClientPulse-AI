@@ -310,6 +310,20 @@ Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.s
   - Script executável: `npm test` / `npm run test:security` (`scripts/test-runtime-security.mjs`).
   - Integrado em `npm run check` para validação contínua em CI e no fluxo de desenvolvimento.
 
+### 5.10 Lógica de Bypass: Envio Automático vs. Pausa para Revisão (BE-16 / Issue #30)
+- **Persistência por Cliente:** Configurado no campo booleano `clients.auto_send_enabled` (por omissão: `false`), persistido no PostgreSQL e modificável pelo utilizador na ficha do cliente (`/dashboard/clients/[id]`) e na revisão do relatório via `ClientAutoSendToggle`.
+- **Aprovação Ativa (`auto_send_enabled = false`):**
+  - O relatório gerado (por agendamento horário ou a pedido) é guardado com estado `draft`.
+  - Na interface do Dashboard e na Ficha do Cliente, é categorizado com o distintivo dourado **"Pendente de revisão"**.
+  - O e-mail para o cliente **não** é disparado, aguardando aprovação explícita ("Aprovar e enviar") do profissional após revisão.
+- **Bypass Ativo (`auto_send_enabled = true`):**
+  - Se a síntese com IA foi concluída com sucesso (`!generatedWithoutAi`), o sistema dispara imediatamente o e-mail via Resend (`sendReportEmail`).
+  - O relatório é persistido com estado `sent`, registando `sent_at`, `approved_at` e `email_delivery_id`.
+  - Na interface, é identificado com o distintivo verde-azulado **"Enviado"**.
+- **Salvaguarda de Segurança (Fallback de IA):**
+  - Caso o modelo Gemini falhe e ocorra agregação em bruto de tarefas (`generatedWithoutAi = true`), o bypass é **abortado automaticamente**, forçando o relatório a permanecer em "Pendente de revisão" para impedir o envio não supervisionado de texto cru.
+- **Suíte de Testes:** Script de validação `scripts/test-bypass-logic.mjs` executável via `npm test`.
+
 ---
 
 ## 6. Technical Risks & Mitigation Strategies

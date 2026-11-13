@@ -183,29 +183,34 @@ Deno.serve(async (req: Request) => {
 
         // Determine initial status: 'sent' ONLY if bypass is enabled AND successfully synthesized with AI
         const isBypass = client.auto_send_enabled === true && !generatedWithoutAi;
-        const initialStatus = isBypass ? 'sent' : 'draft';
+        let initialStatus = isBypass ? 'sent' : 'draft';
 
         let emailDeliveryId = null;
         let sentAtTimestamp = null;
 
         // If bypass is active, immediately dispatch email
         if (isBypass && client.email) {
-          const emailResult = await sendReportEmail({
-            toEmail: client.email,
-            clientName: client.name,
-            companyName: client.company_name,
-            periodStart: periodStartStr,
-            periodEnd: periodEndStr,
-            summaryDone: reportBlocks.done,
-            summaryBlockers: reportBlocks.blockers,
-            summaryNextSteps: reportBlocks.next_steps,
-            portalToken: client.portal_token,
-            appUrl,
-            language: (client.language as 'pt' | 'en') ?? 'pt',
-          });
-          emailDeliveryId = emailResult.id;
-          sentAtTimestamp = new Date().toISOString();
-          results.auto_sent++;
+          try {
+            const emailResult = await sendReportEmail({
+              toEmail: client.email,
+              clientName: client.name,
+              companyName: client.company_name,
+              periodStart: periodStartStr,
+              periodEnd: periodEndStr,
+              summaryDone: reportBlocks.done,
+              summaryBlockers: reportBlocks.blockers,
+              summaryNextSteps: reportBlocks.next_steps,
+              portalToken: client.portal_token,
+              appUrl,
+              language: (client.language as 'pt' | 'en') ?? 'pt',
+            });
+            emailDeliveryId = emailResult.id;
+            sentAtTimestamp = new Date().toISOString();
+            results.auto_sent++;
+          } catch (emailErr: unknown) {
+            console.error(`[dispatch-scheduled-reports] Bypass email failed for client ${client.id}:`, emailErr);
+            initialStatus = 'failed';
+          }
         }
 
         // Insert report

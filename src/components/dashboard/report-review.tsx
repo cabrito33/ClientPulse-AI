@@ -194,7 +194,7 @@ export function ReportReview({
               </Badge>
             ) : (
               <Badge tone="gold" dot>
-                Aguarda aprovação
+                Pendente de revisão
               </Badge>
             )}
             {report.generatedWithoutAi && (

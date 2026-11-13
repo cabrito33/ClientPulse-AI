@@ -8,9 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "test:security": "node --experimental-strip-types scripts/test-runtime-security.mjs",
-    "test": "npm run test:security",
+    "test:bypass": "node scripts/test-bypass-logic.mjs",
+    "test": "npm run test:security && npm run test:bypass",
     "check:use-server": "node scripts/check-use-server.mjs",
-    "check": "npm run lint && npx tsc --noEmit && npm run check:use-server && npm run test:security && cross-env NEXT_DIST_DIR=.next-check next build"
+    "check": "npm run lint && npx tsc --noEmit && npm run check:use-server && npm run test && cross-env NEXT_DIST_DIR=.next-check next build"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

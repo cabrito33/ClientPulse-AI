@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonClass } from "@/components/ui/button";
 import { CompletedBySprintChart } from "@/components/dashboard/charts";
 import { GenerateReportButton } from "@/components/dashboard/generate-report-button";
+import { ClientAutoSendToggle } from "@/components/dashboard/client-autosend-toggle";
 import { formatDate } from "@/lib/utils";
 
 interface ClientPageProps {
@@ -117,21 +118,17 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
                     tone={
                       r.status === "sent"
                         ? "teal"
-                        : r.status === "pending_approval"
-                        ? "gold"
                         : r.status === "failed"
                         ? "accent"
-                        : "neutral"
+                        : "gold"
                     }
                     dot
                   >
                     {r.status === "sent"
                       ? "Enviado"
-                      : r.status === "pending_approval"
-                      ? "Por aprovar"
                       : r.status === "failed"
                       ? "Falha no envio"
-                      : "Rascunho"}
+                      : "Pendente de revisão"}
                   </Badge>
                   <Link
                     href={`/dashboard/reports/${r.id}`}
@@ -170,12 +167,7 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
                 <dt className="text-muted">Idioma</dt>
                 <dd className="font-medium text-ink-soft uppercase">{client.language}</dd>
               </div>
-              <div className="flex justify-between">
-                <dt className="text-muted">Envio automático</dt>
-                <dd className="font-medium text-ink-soft">
-                  {client.autoSend ? "Ligado (bypass)" : "Desligado (requer aprovação)"}
-                </dd>
-              </div>
+              <ClientAutoSendToggle clientId={client.id} initialAutoSend={client.autoSend} />
             </dl>
           </section>
 

@@ -51,8 +51,8 @@ function getIsoWeekNumber(d: Date = new Date()): number {
 }
 
 const statusBadge = {
-  pending_approval: { tone: "gold" as const, label: "Aguarda aprovação" },
-  draft: { tone: "muted" as const, label: "Rascunho" },
+  pending_approval: { tone: "gold" as const, label: "Pendente de revisão" },
+  draft: { tone: "gold" as const, label: "Pendente de revisão" },
   sent: { tone: "teal" as const, label: "Enviado" },
   scheduled: { tone: "neutral" as const, label: "Agendado" },
   failed: { tone: "accent" as const, label: "Falha no envio" },
@@ -145,7 +145,7 @@ export default async function DashboardPage() {
             {greeting}, {firstName}.
           </h1>
           <p className="mt-1 text-[14px] text-muted">
-            {pending.length} relatórios por aprovar · {clients.filter((c) => c.status === "active").length} clientes ativos
+            {pending.length} relatórios pendentes de revisão · {clients.filter((c) => c.status === "active").length} clientes ativos
             {failed.length > 0 && (
               <span className="text-accent font-medium"> · {failed.length} com falha</span>
             )}

@@ -20,6 +20,7 @@ import { createUserClient, createAdminClient, getAuthenticatedUser } from '../_s
 import { fetchBoardTasks } from '../_shared/github.ts';
 import { generateExecutiveReport } from '../_shared/gemini.ts';
 import { decryptPat } from '../_shared/crypto.ts';
+import { sendReportEmail } from '../_shared/resend.ts';
 
 Deno.serve(async (req: Request) => {
   // 1. Handle CORS preflight
@@ -68,7 +69,7 @@ Deno.serve(async (req: Request) => {
     // 4. Fetch Client Settings
     const { data: client, error: clientError } = await supabase
       .from('clients')
-      .select('id, agency_id, name, company_name, communication_tone, language, github_project_id, column_mapping')
+      .select('id, agency_id, name, email, company_name, communication_tone, language, github_project_id, column_mapping, auto_send_enabled, portal_token')
       .eq('id', client_id)
       .single();
 
@@ -170,7 +171,40 @@ Deno.serve(async (req: Request) => {
     const periodStartStr = periodStart.toISOString().split('T')[0];
     const periodEndStr = periodEnd.toISOString().split('T')[0];
 
-    // 9. Save or Update Draft Report into Database
+    // Determine Bypass vs Manual Approval (BE-16)
+    // If client has auto_send_enabled = true (or bypass: true in request body) AND synthesis succeeded with AI
+    const shouldBypass = body.bypass !== undefined ? Boolean(body.bypass) : Boolean(client.auto_send_enabled);
+    const isBypass = shouldBypass && !generatedWithoutAi;
+
+    let initialStatus = isBypass ? 'sent' : 'draft';
+    let emailDeliveryId: string | null = null;
+    let sentAtTimestamp: string | null = null;
+
+    if (isBypass && client.email) {
+      try {
+        const appUrl = Deno.env.get('NEXT_PUBLIC_APP_URL') || 'http://localhost:3000';
+        const emailResult = await sendReportEmail({
+          toEmail: client.email,
+          clientName: client.name,
+          companyName: client.company_name,
+          periodStart: periodStartStr,
+          periodEnd: periodEndStr,
+          summaryDone: reportBlocks.done,
+          summaryBlockers: reportBlocks.blockers,
+          summaryNextSteps: reportBlocks.next_steps,
+          portalToken: client.portal_token,
+          appUrl,
+          language: (client.language as 'pt' | 'en') ?? 'pt',
+        });
+        emailDeliveryId = emailResult.id;
+        sentAtTimestamp = new Date().toISOString();
+      } catch (emailErr: unknown) {
+        console.error('[generate-report] Bypass auto-send failed:', emailErr);
+        initialStatus = 'failed';
+      }
+    }
+
+    // 9. Save or Update Report into Database
     const rawData = {
       tasks: tasks.all,
       tasks_completed: tasks.done.length,
@@ -216,6 +250,10 @@ Deno.serve(async (req: Request) => {
           summary_blockers: reportBlocks.blockers,
           summary_next_steps: reportBlocks.next_steps,
           raw_github_data: rawData,
+          status: initialStatus,
+          approved_at: sentAtTimestamp,
+          sent_at: sentAtTimestamp,
+          email_delivery_id: emailDeliveryId,
           updated_at: new Date().toISOString(),
         })
         .eq('id', matchingDraft.id)
@@ -235,13 +273,16 @@ Deno.serve(async (req: Request) => {
         .insert({
           client_id: client.id,
           agency_id: client.agency_id,
-          status: 'draft',
+          status: initialStatus,
           period_start: periodStartStr,
           period_end: periodEndStr,
           summary_done: reportBlocks.done,
           summary_blockers: reportBlocks.blockers,
           summary_next_steps: reportBlocks.next_steps,
           raw_github_data: rawData,
+          approved_at: sentAtTimestamp,
+          sent_at: sentAtTimestamp,
+          email_delivery_id: emailDeliveryId,
         })
         .select()
         .single();
@@ -298,7 +339,8 @@ Deno.serve(async (req: Request) => {
         success: true,
         report_id: report.id,
         client_id: client.id,
-        status: 'draft',
+        status: initialStatus,
+        auto_sent: isBypass && initialStatus === 'sent',
         generated_without_ai: generatedWithoutAi,
         period: {
           start: periodStartStr,
