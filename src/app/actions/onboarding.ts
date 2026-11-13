@@ -251,6 +251,29 @@ export async function completeOnboardingAction(
           },
         })
         .eq("id", clientId);
+
+      // Ensure active portal token record with 90-day expiration (BE-19)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: updatedClient } = await (supabase.from("clients") as any)
+        .select("portal_token")
+        .eq("id", clientId)
+        .single();
+      if (updatedClient?.portal_token) {
+        const expirationDays = parseInt(process.env.PORTAL_TOKEN_EXPIRATION_DAYS || "90", 10) || 90;
+        const expiresAt = new Date(Date.now() + expirationDays * 86400000).toISOString();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase.from("portal_tokens") as any).upsert(
+          {
+            client_id: clientId,
+            agency_id: agencyId,
+            token: updatedClient.portal_token,
+            is_active: true,
+            expires_at: expiresAt,
+            revoked_at: null,
+          },
+          { onConflict: "token" }
+        );
+      }
     } else {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: newClient, error: clientErr } = await (supabase.from("clients") as any)
@@ -271,7 +294,7 @@ export async function completeOnboardingAction(
           },
           auto_send_enabled: false,
         })
-        .select("id")
+        .select("id, portal_token")
         .single();
 
       if (clientErr || !newClient) {
@@ -281,6 +304,24 @@ export async function completeOnboardingAction(
         };
       }
       clientId = newClient.id as string;
+
+      // Ensure active portal token record with 90-day expiration (BE-19)
+      if (newClient.portal_token) {
+        const expirationDays = parseInt(process.env.PORTAL_TOKEN_EXPIRATION_DAYS || "90", 10) || 90;
+        const expiresAt = new Date(Date.now() + expirationDays * 86400000).toISOString();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase.from("portal_tokens") as any).upsert(
+          {
+            client_id: clientId,
+            agency_id: agencyId,
+            token: newClient.portal_token,
+            is_active: true,
+            expires_at: expiresAt,
+            revoked_at: null,
+          },
+          { onConflict: "token" }
+        );
+      }
     }
 
     let generatedReportId: string | null = null;

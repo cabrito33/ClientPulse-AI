@@ -145,7 +145,7 @@ export async function callGeminiModel(
   apiKey: string,
   requestBody: unknown
 ): Promise<{ text: string; model: string }> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
   let lastStatus = 0;
   let lastErrorText = '';
@@ -154,7 +154,10 @@ export async function callGeminiModel(
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
         body: JSON.stringify(requestBody),
         signal: AbortSignal.timeout(25000),
       });

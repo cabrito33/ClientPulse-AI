@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { CheckCircle2, ShieldCheck, ArrowLeft, Clock, FileText } from "lucide-react";
-import { getPortalData } from "@/lib/api";
+import { CheckCircle2, ShieldCheck, ArrowLeft, Clock, FileText, ShieldAlert } from "lucide-react";
+import { getPortalData, getPortalTokenStatus } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Logo } from "@/components/ui/logo";
 import { CompletedBySprintChart } from "@/components/dashboard/charts";
@@ -14,7 +14,12 @@ interface PortalPageProps {
 export async function generateMetadata({ params }: PortalPageProps) {
   const { token } = await params;
   const data = await getPortalData(token);
-  if (!data) return { title: "Portal não encontrado" };
+  if (!data) {
+    const status = await getPortalTokenStatus(token);
+    if (status === "expired") return { title: "Link Expirado — Portal do Cliente" };
+    if (status === "revoked") return { title: "Link Revogado — Portal do Cliente" };
+    return { title: "Portal não encontrado" };
+  }
   return {
     title: `Portal do Cliente — ${data.client.name}`,
     robots: { index: false, follow: false },
@@ -26,6 +31,61 @@ export default async function PortalPage({ params }: PortalPageProps) {
   const data = await getPortalData(token);
 
   if (!data) {
+    const tokenStatus = await getPortalTokenStatus(token);
+
+    if (tokenStatus === "expired" || tokenStatus === "revoked") {
+      const isExpired = tokenStatus === "expired";
+      return (
+        <div className="min-h-screen bg-paper text-ink">
+          {/* Top navigation */}
+          <header className="border-b border-line bg-surface/80 backdrop-blur">
+            <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-4 sm:px-8">
+              <div className="flex items-center gap-3">
+                <Logo href={null} />
+                <span className="hidden text-muted-soft sm:inline">/</span>
+                <span className="hidden text-sm font-medium text-ink-soft sm:inline">
+                  Portal do Cliente
+                </span>
+              </div>
+              <Badge tone="accent" dot>
+                {isExpired ? "Link Expirado" : "Link Revogado"}
+              </Badge>
+            </div>
+          </header>
+
+          <main className="mx-auto max-w-xl px-5 py-16 sm:py-24">
+            <div className="rounded-2xl border border-line bg-surface p-8 text-center shadow-sm">
+              <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-sand text-accent">
+                {isExpired ? (
+                  <Clock className="h-7 w-7 text-accent" aria-hidden="true" />
+                ) : (
+                  <ShieldAlert className="h-7 w-7 text-accent" aria-hidden="true" />
+                )}
+              </div>
+
+              <h1 className="font-display text-2xl text-ink">
+                {isExpired ? "Este link de acesso expirou" : "Este link de acesso foi revogado"}
+              </h1>
+
+              <p className="mt-3 text-sm leading-relaxed text-muted">
+                {isExpired
+                  ? "Por motivos de segurança e proteção de dados, os links de acesso ao portal do cliente possuem uma validade máxima de 90 dias."
+                  : "Foi gerado um novo link de segurança para aceder ao portal deste projeto, tornando este link anterior inativo."}
+              </p>
+
+              <div className="mt-6 rounded-xl border border-line bg-sand/30 p-4 text-left text-xs text-muted-soft space-y-2">
+                <p className="font-medium text-ink-soft">Como aceder novamente ao seu portal?</p>
+                <ul className="list-disc list-inside space-y-1 text-muted">
+                  <li>Consulte o e-mail de relatório semanal mais recente enviado pela sua equipa.</li>
+                  <li>Ou solicite ao gestor da agência a renovação do link do portal.</li>
+                </ul>
+              </div>
+            </div>
+          </main>
+        </div>
+      );
+    }
+
     notFound();
   }
 

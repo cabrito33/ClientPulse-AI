@@ -7,13 +7,22 @@ import { recordReportOpen, getClientByPortalToken, getReportsForClient } from "@
  * Issue: [BE-21] [P2] [M] Webhook/tracking de abertura de e-mail (openedAt) #35
  *
  * CRITÉRIOS DE ACEITAÇÃO:
- * 1. Endpoint regista data/hora da primeira abertura
+ * 1. Endpoint regista data/hora da primeira abertura (sempre carimbo do servidor)
  * 2. openedAt visível no dashboard
- * 3. Pedidos repetidos não sobrescrevem o primeiro registo
+ * 3. Pedidos repetidos não sobrescrevem o primeiro registo (idempotência)
  *
- * METHODS:
- * - GET: Transparent 1x1 GIF tracking pixel for HTML emails
- * - POST: Direct JSON tracking endpoint for webhook integrations / client portal
+ * NOTA SOBRE PRIVACIDADE E FIABILIDADE DO PIXEL:
+ * O rastreio via pixel transparente 1x1 e webhooks de e-mail é meramente indicativo.
+ * Sistemas de privacidade (como o Apple Mail Privacy Protection - MPP), filtros
+ * antimalware e proxies corporativos descarregam imagens antecipadamente em segundo
+ * plano, o que pode originar falsos positivos imediatos. Por outro lado, clientes de
+ * e-mail com bloqueio de imagens desativam o carregamento do pixel a menos que o
+ * utilizador autorize ou abra o portal do cliente. O ClientPulse AI preserva a
+ * primeira interação verificada sem nunca permitir manipulação do timestamp via body.
+ *
+ * MÉTODOS:
+ * - GET: Serve pixel GIF 1x1 transparente para clientes de e-mail HTML.
+ * - POST: Endpoint JSON programático para triggers de abertura (utiliza sempre carimbo de servidor).
  * ==============================================================================
  */
 
@@ -53,10 +62,14 @@ async function resolveReportId(params: {
 /**
  * GET /api/track/open
  * Serves 1x1 transparent tracking pixel image for HTML email clients.
+ * Uses the server's current timestamp to record open.
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const reportIdParam = searchParams.get("reportId") || searchParams.get("report_id") || searchParams.get("id");
+  const reportIdParam =
+    searchParams.get("reportId") ||
+    searchParams.get("report_id") ||
+    searchParams.get("id");
   const tokenParam = searchParams.get("token");
   const emailIdParam = searchParams.get("emailId") || searchParams.get("email_id");
 
@@ -68,7 +81,7 @@ export async function GET(request: Request) {
     });
 
     if (targetReportId) {
-      // Record open timestamp (idempotent: does NOT overwrite if already opened)
+      // Record open timestamp using current server time (idempotent: does NOT overwrite if already opened)
       await recordReportOpen(targetReportId);
     }
   } catch {
@@ -81,15 +94,16 @@ export async function GET(request: Request) {
       "Content-Type": "image/gif",
       "Content-Length": String(TRANSPARENT_GIF_PIXEL.length),
       "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
-      "Pragma": "no-cache",
-      "Expires": "0",
+      Pragma: "no-cache",
+      Expires: "0",
     },
   });
 }
 
 /**
  * POST /api/track/open
- * Programmatic JSON tracking endpoint for webhooks, portal view triggers, or external callers.
+ * Programmatic JSON tracking endpoint for portal view triggers or external callers.
+ * SECURITY: Never accepts timestamp from the request body; always records the server's current time.
  */
 export async function POST(request: Request) {
   try {
@@ -97,7 +111,6 @@ export async function POST(request: Request) {
     const reportIdParam = body.reportId || body.report_id || body.id;
     const tokenParam = body.token;
     const emailIdParam = body.emailId || body.email_id;
-    const customTimestamp = body.timestamp || body.openedAt || body.opened_at;
 
     const targetReportId = await resolveReportId({
       reportId: reportIdParam,
@@ -110,12 +123,12 @@ export async function POST(request: Request) {
         {
           error: "Identificador obrigatório. Forneça 'reportId', 'report_id', ou 'token'.",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    // Record open timestamp (Acceptance Criteria 1 & 3)
-    const result = await recordReportOpen(targetReportId, customTimestamp);
+    // Always enforce server time — body timestamps are strictly ignored
+    const result = await recordReportOpen(targetReportId);
 
     return NextResponse.json({
       success: true,
@@ -127,7 +140,8 @@ export async function POST(request: Request) {
         : "Relatório já havia sido aberto anteriormente. Timestamp original preservado.",
     });
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : "Erro interno no tracking de abertura.";
+    const errorMsg =
+      err instanceof Error ? err.message : "Erro interno no tracking de abertura.";
     return NextResponse.json({ error: errorMsg }, { status: 404 });
   }
 }

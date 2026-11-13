@@ -13,8 +13,8 @@ All backend logic in ClientPulse AI runs on **Supabase Edge Functions** (TypeScr
    - The caller is an agency manager logged in via Supabase Auth.
    - The function extracts the user with `supabase.auth.getUser(token)`.
    - Used by: `github-sync`, `generate-report`, `approve-and-send`, `onboarding-chat`.
-2. **Public Token-Gated (`?token=<UUID>`):**
-   - The caller is an end client clicking a link from their email (`/portal?token=<UUID>`).
+2. **Public Token-Gated (`/portal/[token]`):**
+   - The caller is an end client clicking a link from their email (`/portal/<UUID>`).
    - Does not require a login. The function verifies that the UUID exists in `clients.portal_token` using the internal `service_role` client.
    - Used by: `client-portal-data`.
 3. **Internal Scheduled Dispatcher (`X-Scheduled-Secret` or `service_role`):**
@@ -183,7 +183,7 @@ Allows the agency manager to modify the draft text, marks the report as `approve
   "status": "sent",
   "sent_at": "2026-10-20T15:00:00Z",
   "email_delivery_id": "resend_msg_01JB...",
-  "portal_url": "https://clientpulse.app/portal?token=d4b29596-f947-4972-965a-0824b0b8cbf0"
+  "portal_url": "https://clientpulse.app/portal/d4b29596-f947-4972-965a-0824b0b8cbf0"
 }
 ```
 

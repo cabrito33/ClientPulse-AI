@@ -5,7 +5,7 @@
 // PURPOSE:
 // Public, Zero-Login API endpoint for the end-client portal web page.
 // The end client accesses the portal using a secure UUID link received in email:
-//   https://clientpulse.app/portal?token=d4b29596-f947-4972-965a-0824b0b8cbf0
+//   https://clientpulse.app/portal/d4b29596-f947-4972-965a-0824b0b8cbf0
 //
 // WHAT IT RETURNS:
 // 1. Client profile (name, company).

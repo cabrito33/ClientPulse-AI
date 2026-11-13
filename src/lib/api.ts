@@ -319,7 +319,7 @@ function buildWeekLabel(start: string, end: string): string {
     ];
     return `${parseInt(day)} ${months[parseInt(m)] ?? m}`;
   };
-  const weekNum = isoWeekNumber(start);
+  const weekNum = isoWeekNumber(end);
   return `Semana ${weekNum} · ${fmt(start)}–${fmt(end)}`;
 }
 
@@ -530,7 +530,11 @@ export async function getPortalData(
     p_token: token,
   });
 
-  if (!rpcRes.error && rpcRes.data) {
+  if (!rpcRes.error) {
+    if (!rpcRes.data) {
+      // Fail-closed: token is revoked, expired, or non-existent in portal_tokens
+      return null;
+    }
     const payload = rpcRes.data as {
       client: ClientRow;
       reports: ReportRow[];
@@ -593,6 +597,28 @@ export async function getPortalData(
     history,
     metrics,
   };
+}
+
+/**
+ * Checks the status of a portal token via RPC check_portal_token_status.
+ * Returns 'valid', 'expired', 'revoked', or 'not_found'.
+ */
+export async function getPortalTokenStatus(
+  token: string,
+): Promise<"valid" | "expired" | "revoked" | "not_found"> {
+  if (!isUUID(token)) return "not_found";
+
+  const supabase = await createClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rpcRes: any = await (supabase.rpc as any)("check_portal_token_status", {
+    p_token: token,
+  });
+
+  if (!rpcRes.error && rpcRes.data) {
+    return rpcRes.data as "valid" | "expired" | "revoked" | "not_found";
+  }
+
+  return "not_found";
 }
 
 /* ------------------------------------------------------------------ */
@@ -1038,6 +1064,79 @@ export async function updateClientAutoSend(
   if (error) {
     throw new Error(`[api] updateClientAutoSend: ${error.message}`);
   }
+}
+
+/**
+ * Renews the portal token for a client (BE-19):
+ * 1. Revokes the client's current active token in portal_tokens (is_active=false, revoked_at=now())
+ * 2. Generates a new UUID token
+ * 3. Creates a new active record in portal_tokens with configurable expiration (default 90 days)
+ * 4. Updates clients.portal_token
+ */
+export async function renewClientPortalToken(
+  clientId: string,
+): Promise<{ portalToken: string; expiresAt: string }> {
+  if (!isUUID(clientId)) {
+    throw new Error("ID de cliente inválido.");
+  }
+  const supabase = await createClient();
+
+  // 1. Fetch current client to get current portal_token and agency_id
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: client, error: fetchErr } = await (supabase.from("clients") as any)
+    .select("id, agency_id, portal_token")
+    .eq("id", clientId)
+    .single();
+
+  if (fetchErr || !client) {
+    throw new Error(`Cliente não encontrado: ${fetchErr?.message || "ID inexistente"}`);
+  }
+
+  const oldToken = client.portal_token;
+  const now = new Date();
+  const days = Number(process.env.PORTAL_TOKEN_EXPIRATION_DAYS || 90);
+  const expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
+  const newToken = crypto.randomUUID();
+
+  // 2. Revoke previous active tokens for this client
+  if (oldToken) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase.from("portal_tokens") as any)
+      .update({
+        is_active: false,
+        revoked_at: now.toISOString(),
+      })
+      .eq("client_id", clientId)
+      .eq("is_active", true);
+  }
+
+  // 3. Insert new token record
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: insertErr } = await (supabase.from("portal_tokens") as any)
+    .insert({
+      client_id: clientId,
+      agency_id: client.agency_id,
+      token: newToken,
+      is_active: true,
+      expires_at: expiresAt,
+      created_at: now.toISOString(),
+    });
+
+  if (insertErr) {
+    throw new Error(`Erro ao registar novo token do portal: ${insertErr.message}`);
+  }
+
+  // 4. Update client record with new portal_token
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: updateErr } = await (supabase.from("clients") as any)
+    .update({ portal_token: newToken })
+    .eq("id", clientId);
+
+  if (updateErr) {
+    throw new Error(`Erro ao atualizar token do cliente: ${updateErr.message}`);
+  }
+
+  return { portalToken: newToken, expiresAt };
 }
 
 /**

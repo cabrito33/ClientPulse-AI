@@ -147,7 +147,7 @@ sequenceDiagram
 
     %% Stage 4: Email Dispatch
     Note over App,Client: Stage 3: Email Delivery
-    App->>Email: Send Transactional Email with Link (/portal?token=UUID)
+    App->>Email: Send Transactional Email with Link (/portal/UUID)
     Email-->>Client: Email delivered with Executive Summary & Link
 
     %% Stage 5: Zero-Login Portal Access
@@ -181,33 +181,37 @@ sequenceDiagram
   ```
 - No user can read, insert, update, or delete data belonging to another agency, even if they manipulate client-side code.
 
-### 5.3 Zero-Login Client Portal Security
-- The end-client portal **never accesses the PostgreSQL database directly**.
-- It communicates exclusively with the `/client-portal-data` Edge Function.
-- Access is authenticated via an unguessable 128-bit UUIDv4 token (`portal_token`).
-- The Edge Function uses Supabase `service_role` internally to locate the specific client matching that exact token. If no match is found, it returns `404 Not Found` without disclosing database details.
-- Agency managers can rotate/regenerate the client's `portal_token` at any time from the dashboard if a link is compromised.
+### 5.3 Zero-Login Client Portal Security & Magic Links (BE-19)
+- The end-client portal accesses data through the fail-closed `get_portal_data_by_token(UUID)` `SECURITY DEFINER` RPC.
+- **Fail-Closed Validation:** Access is strictly granted only when the UUID token exists in the `portal_tokens` table with:
+  - `is_active = true`
+  - `revoked_at IS NULL`
+  - `expires_at > now()` (Default validity of 90 days, configurable via `PORTAL_TOKEN_EXPIRATION_DAYS`).
+- If any check fails, the RPC returns `NULL`. The helper `check_portal_token_status(UUID)` identifies whether the link was revoked, expired, or invalid to render a friendly, secure explanation in the UI.
+- **Token Revocation & Renewal:** Agency managers can revoke the active token and generate a fresh 90-day magic link directly from the client details page via "Renovar link do portal".
 
 ### 5.4 Secret & Credential Management
 - Sensitive keys are never committed to git:
-  - `GEMINI_API_KEY`: Stored in Supabase Vault / Edge Function Secrets.
+  - `GEMINI_API_KEY`: Stored in Supabase Vault / Edge Function Secrets. Sent to Google Gemini exclusively via the HTTP header `x-goog-api-key` (never in URL query parameters).
   - `GEMINI_MODEL`: Optional model override stored in Edge Function Secrets. Defaults to `gemini-3.8-flash`. If Google deprecates or retires a model, set the new model name via `npx supabase secrets set GEMINI_MODEL="<new_model>"` without altering codebase.
   - `GEMINI_FALLBACK_MODEL`: Optional secondary fallback model if the primary model is overloaded (HTTP 503) or rate limited (HTTP 429). Defaults to `gemini-3.7-flash`. The system retries transient errors up to 2 times with backoff before falling back to this model, and ultimately to raw formatted tasks if both models fail.
   - `RESEND_API_KEY`: Stored in Supabase Secrets.
+  - `RESEND_WEBHOOK_SECRET`: Svix signing secret (format `whsec_...`) used to verify transactional email webhooks (`email.opened`) via HMAC-SHA256.
   - `SUPABASE_SERVICE_ROLE_KEY`: Used only inside server-side Edge Functions.
   - `SCHEDULED_FUNCTION_SECRET`: Shared secret used by `pg_cron` / `pg_net` to trigger `/dispatch-scheduled-reports`. Set via `supabase secrets set SCHEDULED_FUNCTION_SECRET="<secret>"`.
   - `PAT_ENCRYPTION_KEY`: 32-byte base64 key used for AES-GCM encryption of GitHub PATs in repose.
 
-### 5.5 GitHub PAT Symmetric Encryption at Rest (Issue #19)
+### 5.5 GitHub PAT Symmetric Encryption at Rest & Column-Level Security (BE-05)
 - **Algorithm:** AES-GCM (Authenticated Encryption) 256-bit with standard Web Crypto API.
 - **Storage Format:** Stored in `github_integrations.pat_token_encrypted` as `<base64_iv>:<base64_ciphertext>`.
 - **Initialization Vector (IV):** 12-byte cryptographically secure random IV generated per encryption (`crypto.getRandomValues`).
 - **Key Storage:** Read strictly inside Edge Functions via `Deno.env.get('PAT_ENCRYPTION_KEY')` (never exposed to browser, frontend or logged).
-- **Migration & Existing Data:** Migration `007_be_19_encrypt_pat.sql` converted `pat_token` to nullable and cleared plaintext rows. In accordance with issue #19, test users re-enter their token during onboarding which automatically saves it encrypted.
-- **Key Rotation Procedure:**
-  1. Generate new 32-byte key: `openssl rand -base64 32`.
-  2. In rotation script, read current `pat_token_encrypted` rows, decrypt with current `PAT_ENCRYPTION_KEY`, re-encrypt with new key, and update rows.
-  3. Update secret in Supabase: `npx supabase secrets set PAT_ENCRYPTION_KEY="<new_key>"`.
+- **Column-Level Security (CLS) Protection (Migration 010):** The `authenticated` role is explicitly restricted so that browsers can never query `pat_token` or `pat_token_encrypted`. Only non-sensitive columns (`id, agency_id, github_username, is_valid, last_synced_at, created_at`) are selectable by clients.
+
+### 5.6 Resend Webhooks & Email Open Tracking (BE-21)
+- **Webhook Verification:** The `/api/webhooks/resend` endpoint verifies the standard Svix signature headers (`svix-id`, `svix-timestamp`, `svix-signature`) with HMAC-SHA256 against `RESEND_WEBHOOK_SECRET`. Unsigned or mismatched requests are rejected immediately with HTTP 401.
+- **Server-Side Timestamp Enforcement:** The tracking pixel endpoint `/api/track/open` strictly ignores any timestamps supplied in request bodies or query parameters, using only server-generated timestamps (`new Date().toISOString()`).
+- **Privacy & Proxy Disclosure:** Email open tracking via 1x1 GIF pixels and webhooks is indicative due to privacy features such as Apple Mail Privacy Protection (MPP) and pre-fetching proxy filters.
 
 ### 5.6 Produção: Configuração Segura do Agendamento (pg_cron, pg_net e Supabase Vault)
 Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.sql`), o agendamento em produção utiliza o **Supabase Vault** em conjunto com a extensão `pg_net` e `pg_cron`:

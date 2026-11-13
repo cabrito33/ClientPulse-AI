@@ -151,7 +151,7 @@ function handleMockEdgeInvocation<T>(functionName: string, body: unknown): T {
       email_delivery_id: "re_mock_12345",
       is_mock_delivery: true,
       mock: true,
-      portal_url: "http://localhost:3000/portal?token=demo-token",
+      portal_url: "http://localhost:3000/portal/demo-token",
     } as T;
   }
 

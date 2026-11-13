@@ -7,6 +7,7 @@ import {
   generateReportOnDemand,
   updateClientColumnMapping,
   updateClientAutoSend,
+  renewClientPortalToken,
 } from "@/lib/api";
 
 /**
@@ -94,6 +95,27 @@ export async function toggleAutoSendAction(
     return { success: true as const };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Erro ao atualizar envio automático";
+    return { success: false as const, error: message };
+  }
+}
+
+/**
+ * Server Action to renew a client's portal token (BE-19).
+ * Revokes current active token and generates a new one.
+ */
+export async function renewPortalTokenAction(clientId: string) {
+  try {
+    const result = await renewClientPortalToken(clientId);
+    revalidatePath("/dashboard");
+    revalidatePath(`/dashboard/clients/${clientId}`);
+    return {
+      success: true as const,
+      portalToken: result.portalToken,
+      expiresAt: result.expiresAt,
+    };
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : "Erro ao renovar link do portal";
     return { success: false as const, error: message };
   }
 }

@@ -124,13 +124,14 @@ WITH CHECK (auth.uid() = user_id);
 ---
 
 ### 3.2 `github_integrations`
-Stores the GitHub Personal Access Token (PAT) used to query the GitHub Projects v2 GraphQL API.
+Stores the GitHub Personal Access Token (PAT) used to query the GitHub Projects v2 GraphQL API. Encrypted at rest via AES-256-GCM.
 
 | Column | Type | Constraints | Description |
 | :--- | :--- | :--- | :--- |
 | `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Unique integration record ID. |
 | `agency_id` | `UUID` | `NOT NULL UNIQUE REFERENCES agencies(id) ON DELETE CASCADE` | Agency owning this PAT. |
-| `pat_token` | `TEXT` | `NOT NULL` | Fine-grained GitHub PAT (`read:project` and `repo` read-only). |
+| `pat_token` | `TEXT` | `NULL` | Deprecated plaintext column (kept nullable for legacy rollback). |
+| `pat_token_encrypted` | `TEXT` | `NULL` | AES-256-GCM encrypted PAT (`iv:ciphertext`) encrypted using `PAT_ENCRYPTION_KEY`. |
 | `github_username` | `TEXT` | `NULL` | GitHub handle of the authenticated user. |
 | `is_valid` | `BOOLEAN` | `DEFAULT true` | Set to false if API returns 401 Bad Credentials. |
 | `last_synced_at` | `TIMESTAMPTZ`| `NULL` | Timestamp of last successful GraphQL sync. |
@@ -139,17 +140,24 @@ Stores the GitHub Personal Access Token (PAT) used to query the GitHub Projects 
 **Indexes:**
 - `CREATE INDEX idx_github_integrations_agency ON github_integrations(agency_id);`
 
-**RLS Policy:**
+**RLS & Column-Level Security (CLS) Policy (Migration 010):**
 ```sql
 ALTER TABLE github_integrations ENABLE ROW LEVEL SECURITY;
 
+-- 1. Row Level Security policy
 CREATE POLICY "Agencies can manage their own GitHub integration"
 ON github_integrations FOR ALL
 TO authenticated
 USING (agency_id IN (SELECT id FROM agencies WHERE user_id = auth.uid()))
 WITH CHECK (agency_id IN (SELECT id FROM agencies WHERE user_id = auth.uid()));
+
+-- 2. Column-Level Security restriction (Migration 010):
+-- Browser/authenticated role cannot query pat_token or pat_token_encrypted
+REVOKE SELECT ON TABLE public.github_integrations FROM authenticated;
+GRANT SELECT (id, agency_id, github_username, is_valid, last_synced_at, created_at)
+  ON TABLE public.github_integrations TO authenticated;
 ```
-*Plain English:* Only the agency owner can view or update their stored PAT token.
+*Plain English:* Agency owners can manage their integrations, but browser clients are blocked by PostgreSQL from selecting the encrypted or plaintext PAT columns. Decryption happens strictly inside server-side Edge Functions.
 
 ---
 
@@ -212,6 +220,7 @@ Stores every weekly progress report draft, approved version, and delivery metada
 | `raw_github_data` | `JSONB` | `NULL` | Snapshot of raw task items from GitHub GraphQL. |
 | `approved_at` | `TIMESTAMPTZ`| `NULL` | Timestamp when manager clicked "Approve and Send". |
 | `sent_at` | `TIMESTAMPTZ`| `NULL` | Timestamp when Resend successfully dispatched the email. |
+| `opened_at` | `TIMESTAMPTZ`| `NULL` | Timestamp of the first email/portal opening (BE-21, idempotent). |
 | `email_delivery_id`| `TEXT`| `NULL` | Resend message ID for delivery tracking. |
 | `created_at` | `TIMESTAMPTZ`| `DEFAULT now()` | Generation timestamp. |
 | `updated_at` | `TIMESTAMPTZ`| `DEFAULT now()` | Last update timestamp. |
@@ -308,20 +317,29 @@ Métricas de velocidade de sprint por cliente. Usadas no dashboard e no portal d
 
 ---
 
-### 4.3 `portal_tokens`
-Tabela dedicada à gestão de tokens de portal com suporte a revogação e expiração.
+### 4.3 `portal_tokens` (BE-19 Magic Links — Migrations 003 & 009)
+Tabela dedicada à gestão de tokens de portal com suporte a revogação, expiração configurável (por defeito 90 dias) e validação fail-closed.
 
 | Coluna | Tipo | Restrições | Descrição |
 | :--- | :--- | :--- | :--- |
-| `id` | `UUID` | `PRIMARY KEY` | Identificador único. |
-| `client_id` | `UUID` | `NOT NULL REFERENCES clients(id)` | Cliente a que pertence. |
-| `agency_id` | `UUID` | `NOT NULL REFERENCES agencies(id)` | Agência proprietária. |
-| `token` | `UUID` | `NOT NULL UNIQUE` | Token de acesso gerado aleatoriamente. |
-| `is_active` | `BOOLEAN` | `DEFAULT true` | `false` após revogação manual. |
-| `expires_at` | `TIMESTAMPTZ` | `NULL` | `NULL` = perpétuo; data = expiração. |
-| `revoked_at` | `TIMESTAMPTZ` | `NULL` | Quando foi revogado manualmente. |
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Identificador único. |
+| `client_id` | `UUID` | `NOT NULL REFERENCES clients(id) ON DELETE CASCADE` | Cliente a que pertence. |
+| `agency_id` | `UUID` | `NOT NULL REFERENCES agencies(id) ON DELETE CASCADE` | Agência proprietária. |
+| `token` | `UUID` | `NOT NULL UNIQUE` | Token de acesso gerado aleatoriamente (UUIDv4). |
+| `is_active` | `BOOLEAN` | `DEFAULT true` | `false` após revogação manual ou renovação. |
+| `expires_at` | `TIMESTAMPTZ` | `DEFAULT (now() + INTERVAL '90 days')` | Data de expiração (90 dias por defeito). |
+| `revoked_at` | `TIMESTAMPTZ` | `NULL` | Carimbo horário de revogação (`now()` se revogado). |
+| `created_at` | `TIMESTAMPTZ` | `DEFAULT now()` | Data de criação do token. |
 
-**RLS:** CRUD completo para a agência proprietária. `anon` não tem acesso directo.
+**Validação Fail-Closed via RPC (`get_portal_data_by_token`):**
+O acesso ao portal público utiliza a função `SECURITY DEFINER` `get_portal_data_by_token(UUID)` que valida:
+1. `is_active = true`
+2. `revoked_at IS NULL`
+3. `expires_at > now()`
+Se qualquer uma das condições falhar, o RPC retorna `NULL`. A função auxiliar `check_portal_token_status(UUID)` devolve `'valid'`, `'expired'`, `'revoked'`, ou `'not_found'` para apresentação de mensagens contextuais seguras no frontend.
+
+**Renovação no Dashboard:**
+A ação `renewClientPortalToken` marca os tokens anteriores do cliente como `is_active = false, revoked_at = now()` e insere um novo registo ativo com validade de 90 dias, atualizando `clients.portal_token`.
 
 ---
 

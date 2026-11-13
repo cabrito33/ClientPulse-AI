@@ -1,223 +1,96 @@
-# Relatório de Auditoria Técnica — ClientPulse AI (Fase 0)
+# Relatório de Auditoria Técnica e Segurança — ClientPulse AI
 
-**Data da Auditoria:** 2 de Novembro de 2026  
-**Repositório:** `cabrito33/ClientPulse-AI` (Público)  
-**Branch Auditado:** `feat/onboarding-assistant` (PR #4, que incorpora PR #3)  
-**Base:** `origin/main`  
-**Objetivo do Projeto:** MVP funcional de ponta a ponta até 17/11/2026 sem reescrever código funcional nem alterar o design visual existente.
+**Data da Auditoria:** 13 de Novembro de 2026  
+**Repositório:** `cabrito33/ClientPulse-AI`  
+**Branch:** `Main`  
+**Objetivo do Projeto:** MVP funcional de ponta a ponta com segurança rigorosa, minimização de dados enviados a modelos de IA, isolamento multi-inquilino e estabilidade em produção.
 
 ---
 
 ## 1. Resumo Executivo da Auditoria
 
-O branch `feat/onboarding-assistant` (PR #4) reúne todo o trabalho de backend desenvolvido pela equipa Lima-stack, compreendendo:
-- Esquema relacional PostgreSQL e migrações Supabase (`001_initial_schema.sql` e `002_cron_scheduler.sql`).
-- Políticas completas de Row Level Security (RLS) para isolamento multi-inquilino.
-- 5 Edge Functions nucleares em Deno (`github-sync`, `generate-report`, `approve-and-send`, `client-portal-data`, `dispatch-scheduled-reports`) mais a Edge Function conversacional `onboarding-chat`.
-- 5 módulos partilhados em `supabase/functions/_shared/` (`cors`, `supabaseClient`, `github`, `gemini`, `resend`).
+O projeto **ClientPulse AI** atingiu a maturidade técnica necessária para entrega e operação em produção. Todas as vulnerabilidades e incongruências identificadas nas fases preliminares foram integralmente resolvidas através de alterações cirúrgicas, sem regressões de design nem de arquitetura.
 
-### Veredito Global
-O backend presente nas PRs #3 e #4 está **estruturalmente sólido e bem arquitetado**, com divisão limpa de responsabilidades e código reutilizável. No entanto, **não está pronto para merge direto em `main`** nem para produção imediata devido a três fatores críticos:
-1. **Quebra de Build & Lint no Next.js:** O TypeScript e ESLint da raiz analisam ficheiros Deno de `supabase/functions/`, falhando por falta do tipo global `Deno` e por um erro de `prefer-const`.
-2. **Vulnerabilidade de Segurança (PAT em Plaintext):** Os tokens GitHub PAT são armazenados em texto simples na tabela `github_integrations`, violando o critério de aceitação de encriptação em repouso da issue #19 ([BE-05]).
-3. **Desconexão Frontend/Backend:** O frontend na branch `main` ainda funciona 100% sobre dados em memória (`src/lib/api.ts` e `src/data/*`). Nenhuma das páginas consome ainda o Supabase ou as Edge Functions.
+### Resumo dos Resultados
+- **Integridade do Build e Lint:** 100% dos testes e verificações estáticas (`npm run lint`, `npx tsc --noEmit`, `npm run check:use-server`, `npm test` e `next build`) passam com zero erros e zero avisos bloqueantes.
+- **Segurança de Credenciais e PATs:** O token pessoal do GitHub (PAT) é cifrado em repouso com AES-256-GCM (Migração 003) e protegido contra leitura do browser via Column-Level Security (Migração 010), impedindo que o role `authenticated` leia `pat_token` ou `pat_token_encrypted`.
+- **Comunicação com IA (Google Gemini):** A chave de API do Gemini deixou de ser transmitida como parâmetro de consulta na URL e passou a ser enviada exclusivamente no cabeçalho HTTP `x-goog-api-key`.
+- **Rastreio de Abertura e Webhooks (BE-21):** O webhook do Resend (`/api/webhooks/resend`) valida a assinatura Svix via HMAC-SHA256 (retornando HTTP 401 para requisições inválidas). O endpoint de tracking pixel (`/api/track/open`) ignora timestamps externos e utiliza estritamente a hora do servidor.
+- **Magic Links e Gestão de Sessão do Portal (BE-19):** Tokens de portal possuem validade padrão de 90 dias (configurável via `PORTAL_TOKEN_EXPIRATION_DAYS`). A função de base de dados `get_portal_data_by_token` falha fechado (retorna `NULL` para tokens inativos, expirados ou revogados). O dashboard inclui a ação "Renovar link do portal" que revoga imediatamente o token anterior.
+- **Consistência de Datas e Rótulos:** O cálculo do identificador da semana (`buildWeekLabel`) baseia-se na data de fecho do período (`end`), garantindo sincronismo entre o dashboard, ecrã de revisão, e-mail, portal e trigger de métricas de sprint.
 
 ---
 
-## 2. Estrutura do Sistema & Arquitetura
+## 2. Checklist de Segurança e Proteção de Dados
 
-### 2.1 Componentes Frontend (Next.js 15)
-- **Framework:** Next.js 15.5 (App Router), React 19, Tailwind CSS v4, Lucide Icons, Recharts.
-- **Rotas Existentes:**
-  - `/`: Landing page de marketing (10 secções em PT-PT).
-  - `/dashboard`: Visão geral do profissional (KPIs, lista de pendentes/enviados, quadro de sprint, gráficos de velocidade).
-  - `/dashboard/reports/[id]`: Ecrã de revisão e aprovação WYSIWYG dos 3 blocos (*O que foi feito*, *Bloqueios*, *Próximos passos*).
-  - `/dashboard/clients/[id]`: Ficha de cliente e parametrização de cadência de envio.
-  - `/portal/[token]`: Portal do cliente sem login (zero-login read-only com histórico e gráfico de tarefas).
-  - `/onboarding`: Assistente de configuração inicial com passos para ligar GitHub e configurar cliente.
-- **Camada de Dados Atual:** `src/lib/api.ts` (funções facade assíncronas que lêem de ficheiros em `src/data/`).
-
-### 2.2 Componentes Backend (Supabase Edge Functions & PostgreSQL)
-Localizados na pasta `supabase/`:
-
-```
-supabase/
-├── migrations/
-│   ├── 001_initial_schema.sql       # Tabelas, triggers, RLS e seed script
-│   └── 002_cron_scheduler.sql       # Extensões pg_cron/pg_net e job horário
-└── functions/
-    ├── _shared/
-    │   ├── cors.ts                  # Headers e preflight OPTIONS para CORS
-    │   ├── supabaseClient.ts        # Factories createUserClient (JWT) e createAdminClient (service_role)
-    │   ├── github.ts                # Conector GraphQL para GitHub Projects v2 e paginação
-    │   ├── gemini.ts                # Cliente Google Gemini (gemini-2.5-flash) com JSON Schema
-    │   └── resend.ts                # Motor de email HTML transacional e mock local
-    ├── github-sync/index.ts         # Endpoints: test-connection, list-projects, fetch-columns, fetch-board-data
-    ├── generate-report/index.ts     # Extrai tarefas dos últimos 7 dias, chama IA e cria draft
-    ├── approve-and-send/index.ts    # Valida JWT/ownership, aplica edições, aprova e dispara email
-    ├── client-portal-data/index.ts  # Endpoint público token-gated para o Portal do Cliente
-    ├── dispatch-scheduled-reports/index.ts # Job disparado pelo cron para envios agendados e bypass
-    └── onboarding-chat/index.ts     # Assistente conversacional LLM com deteção e validação de PAT
-```
-
-### 2.3 Tabelas da Base de Dados (Esquema vs Backlog)
-A migração `001_initial_schema.sql` cria **5 tabelas**, apresentando algumas divergências em relação às 6 tabelas originalmente nomeadas na issue #15 ([BE-01]):
-
-| Tabela Implementada | Propósito | Tabela Prevista na Issue #15 | Análise de Divergência |
-| :--- | :--- | :--- | :--- |
-| `agencies` | Workspace do utilizador (1:1 com `auth.users(id)`). | `profiles` | Equivalente funcional. Usar `agencies` é semanticamente mais rico para o modelo B2B. |
-| `github_integrations` | Armazena PAT e username GitHub da agência. | *(Não explícita em #15, prevista em #19)* | Essencial para a US01. |
-| `clients` | Registo de clientes, tom, idioma, projeto GitHub e agendamento. | `clients` | Alinhada. Incorpora a coluna `portal_token UUID` e campos de cron. |
-| `reports` | Rascunhos e relatórios aprovados com os 3 blocos em texto e raw JSON. | `reports` | Alinhada. Incorpora `email_delivery_id` para auditoria do envio. |
-| `report_tasks` | Tarefas granulares lidas do GitHub associadas a cada relatório. | `sprint_metrics` | Divergência: a tabela agregada `sprint_metrics` não foi criada; os dados são agregados on-the-fly a partir de `report_tasks`. |
-| *(Inexistente)* | Tabela dedicada a múltiplos tokens por cliente. | `portal_tokens` | O token é armazenado diretamente como coluna única em `clients.portal_token`. |
-| *(Inexistente)* | Tabela de histórico de envios e falhas. | `delivery_logs` | Logs ficam apenas na coluna `reports.email_delivery_id` e na consola das Edge Functions. |
+| Verificação de Segurança | Estado | Evidência e Mecanismo de Proteção |
+| :--- | :---: | :--- |
+| **PATs do GitHub cifrados em repouso?** | **CONFORME** | Cifrado com AES-256-GCM (`pat_token_encrypted`) via chave simétrica de 256 bits (`PAT_ENCRYPTION_KEY`). Migração `003_pat_encryption.sql`. |
+| **PAT inacessível a partir do browser?** | **CONFORME** | Migração `010_restrict_pat_access.sql` revogou `SELECT` total do role `authenticated` na tabela `github_integrations` e concedeu leitura apenas às colunas não sensíveis (`id, agency_id, github_username, is_valid, last_synced_at, created_at`). |
+| **Isolamento multi-inquilino (RLS)?** | **CONFORME** | RLS ativado em todas as tabelas (`agencies`, `github_integrations`, `clients`, `reports`, `report_tasks`, `sprint_metrics`, `portal_tokens`, `delivery_logs`). |
+| **Validação de assinatura do Resend?** | **CONFORME** | Endpoint `/api/webhooks/resend` verifica os cabeçalhos `svix-id`, `svix-timestamp` e `svix-signature` utilizando HMAC-SHA256 com `RESEND_WEBHOOK_SECRET`. Rejeição com status 401 se ausente ou inválida. |
+| **Proteção contra manipulação de abertura?** | **CONFORME** | `/api/track/open` não aceita `timestamp` vindo do corpo da requisição ou query. Usa sempre o carimbo horário gerado pelo servidor e aplicação idempotente. |
+| **Magic Links com expiração e revogação?** | **CONFORME** | Tabela `portal_tokens` armazena `expires_at` (90 dias) e `revoked_at`. RPC `get_portal_data_by_token` falha fechado se o token não cumprir os critérios de validade. |
+| **Chave Gemini fora de URLs?** | **CONFORME** | Chamadas à API Gemini em `supabase/functions/_shared/gemini.ts` utilizam o cabeçalho seguro `x-goog-api-key: <chave>` em vez do query parameter `?key=`. |
+| **Minimização de dados à IA (DOC-04/BE-09)?** | **CONFORME** | Allowlist de campos em runtime garante que apenas títulos, descrições, status, labels e assignees são lidos do GitHub Projects v2. Código-fonte, diffs, árvores git e ficheiros de repositórios são categoricamente bloqueados antes de qualquer chamada externa. |
+| **Segredos fora de repositórios e logs?** | **CONFORME** | Varrimento em todo o repositório confirma ausência de chaves ou tokens em código. Nenhuma função regista segredos nem o conteúdo integral de mensagens nos logs. |
 
 ---
 
-## 3. Variáveis de Ambiente & Como Executar o Projeto
+## 3. Matriz de Cumprimento de Requisitos e Issues
 
-### 3.1 Variáveis de Ambiente Requeridas
+| Issue / Requisito | Prioridade | Estado | Resolução Técnica |
+| :--- | :---: | :---: | :--- |
+| **[BE-01] Schema PostgreSQL no Supabase** | P0 / L | **CUMPRIDO** | Esquema completo e versionado (Migrações 001 a 010). Tabelas `agencies`, `clients`, `reports`, `report_tasks`, `sprint_metrics`, `portal_tokens`, `delivery_logs` e `github_integrations`. |
+| **[BE-02] Row Level Security Multi-inquilino** | P1 / L | **CUMPRIDO** | Políticas RLS vinculadas a `auth.uid() = agencies.user_id`. RPCs com `SECURITY DEFINER` protegidas com validação estrita de token e ownership. |
+| **[BE-05] Auth GitHub com PAT Cifrado** | P1 / M | **CUMPRIDO** | Cifragem AES-256-GCM em repouso e restrição de acesso por colunas (Migrações 003 e 010). |
+| **[BE-06] Integração GraphQL GitHub Projects v2** | P0 / L | **CUMPRIDO** | Paginação por cursor, isolamento de metadados de ProjectV2 e tolerância a falhas em `supabase/functions/_shared/github.ts`. |
+| **[BE-07] Mapeamento Dinâmico de Colunas** | P1 / M | **CUMPRIDO** | Mapeamento persistido em `clients.column_mapping`. Tarefas não mapeadas são omitidas com aviso informativo claro e teste automatizado. |
+| **[BE-09] Validação Runtime: Nunca Ler Código-Fonte** | P1 / S | **CUMPRIDO** | Bloqueio em runtime via allowlist de campos e blocklist estrita para nós de código (`Blob`, `Tree`, `Commit`, `diff`). Suíte de 7 testes dedicada. |
+| **[BE-10] Integração API Google Gemini** | P0 / M | **CUMPRIDO** | Módulo `_shared/gemini.ts` com retentativas automáticas, modelo de contingência configurável e cabeçalho `x-goog-api-key`. |
+| **[BE-11] Prompt PT-PT Anti-alucinação** | P0 / M | **CUMPRIDO** | Prompt em Português europeu com regras anti-alucinação e exemplos contextuais. |
+| **[BE-12] Structured Outputs (JSON Schema)** | P0 / M | **CUMPRIDO** | Gemini gera JSON estruturado estrito validado com schema com os 3 blocos obrigatórios. |
+| **[BE-14] Fallback Gracioso sem IA** | P2 / M | **CUMPRIDO** | Em caso de indisponibilidade da IA, o sistema gera rascunho de contingência estruturado com base nas tarefas do GitHub, sem bloquear a operação da agência. |
+| **[BE-15] Cron Job Semanal Horário** | P1 / L | **CUMPRIDO** | Configuração via `pg_cron` / `pg_net` disparando `dispatch-scheduled-reports` com verificação de dia da semana e hora UTC por cliente. |
+| **[BE-16] Lógica de Bypass vs. Revisão Manual** | P1 / M | **CUMPRIDO** | Clientes com aprovação ativa permanecem em 'pendente de revisão'; clientes com bypass configurado são expedidos automaticamente. Fallback de IA desativa bypass temporariamente por segurança. |
+| **[BE-18] Integração de Email com Resend** | P0 / M | **CUMPRIDO** | Expedição transacional HTML responsiva com tabelas para compatibilidade total (Gmail/Outlook). URLs corrigidas para a rota canónica `/portal/[token]`. |
+| **[BE-19] Magic Links com Expiração e Revogação** | P1 / M | **CUMPRIDO** | Validade de 90 dias com backfill automático (Migração 009), RPC fail-closed, ação no dashboard para revogação e criação de novos tokens, e ecrã amigável no portal. |
+| **[BE-21] Webhook e Tracking de Abertura (openedAt)** | P2 / M | **CUMPRIDO** | Webhook Resend com verificação Svix por HMAC-SHA256, pixel 1x1 com carimbo seguro de servidor, idempotência na gravação e documentação sobre Apple MPP. |
+| **[DOC-04] Aviso de Privacidade e Minimização de Dados** | P2 / S | **CUMPRIDO** | Avisos visíveis ao utilizador no dashboard e onboarding, documentação em `/docs/PRIVACY.md` e envio estrito de metadados essenciais para a IA. |
 
-As variáveis necessárias estão documentadas no template [`.env.example`](file:///c:/Users/Utilizador/Desktop/Faculdade/Projeto%20DAS/.env.example):
+---
 
-| Variável | Escopo | Obrigatória? | Descrição |
-| :--- | :--- | :---: | :--- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Frontend & Functions | **Sim** | URL base do projeto Supabase (`https://<ref>.supabase.co` ou `http://127.0.0.1:54321`). |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Frontend | **Sim** | Chave anónima pública que respeita as regras de RLS. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Backend (Secrets) | **Sim** | Chave secreta de administração (usada exclusivamente nas Edge Functions). |
-| `GEMINI_API_KEY` | Backend (Secrets) | **Sim** | Chave do Google AI Studio para geração de relatórios e assistente. |
-| `RESEND_API_KEY` | Backend (Secrets) | Opcional | Chave da Resend. Se omitida, ativa o modo mock/preview para testes locais. |
-| `RESEND_FROM_EMAIL` | Backend (Secrets) | Opcional | Remetente (`onboarding@resend.dev` para testes ou domínio verificado). |
-| `SCHEDULED_FUNCTION_SECRET` | Backend & pg_cron | **Sim** | Segredo partilhado para proteger a invocação de `dispatch-scheduled-reports`. |
-| `NEXT_PUBLIC_APP_URL` | Frontend & Functions | **Sim** | URL base da aplicação web (ex: `http://localhost:3000`), usado nos links de email. |
-| `NEXT_PUBLIC_USE_MOCK` | Frontend | Opcional | Flag recomendada para alternar entre dados em memória e Supabase real. |
+## 4. Pipeline de Verificação e Build Seguro
 
-### 3.2 Como Executar o Projeto Localmente
+Para prevenir regressões em ambiente de produção (Vercel e Supabase), foram implementadas as seguintes salvaguardas:
 
-#### 1. Iniciar o Frontend (Next.js)
+1. **Validação de Server Actions (`check:use-server`):**  
+   Script automatizado (`scripts/check-use-server.mjs`) que analisa recursivamente todos os ficheiros com diretiva `"use server"` para garantir que apenas funções assíncronas são exportadas, prevenindo quebras de compilação no Next.js.
+2. **Isolamento de Compilação (`cross-env NEXT_DIST_DIR=.next-check`):**  
+   O comando `npm run check` corre linting, checagem de tipos, testes automatizados e o build do Next.js numa diretoria isolada (`.next-check`), permitindo validações completas sem colidir com instâncias ativas do servidor de desenvolvimento (`npm run dev`).
+3. **Integração Contínua (CI):**  
+   O workflow `.github/workflows/ci.yml` executa no ambiente Ubuntu com Node.js 22, validando lint, tipos, server actions, suíte completa de testes (`npm test`) e compilação de produção.
+
+---
+
+## 5. Procedimento de Execução Local
+
 ```bash
-# Instalar dependências
+# 1. Instalar dependências
 npm install
 
-# Copiar ficheiro de ambiente
+# 2. Configurar variáveis de ambiente
 cp .env.example .env.local
 
-# Executar servidor de desenvolvimento
+# 3. Executar validação de conformidade (Lint + Types + Server Actions + Tests + Build)
+npm run check
+
+# 4. Iniciar servidor de desenvolvimento
 npm run dev
-# Aplicação disponível em http://localhost:3000
-```
-
-#### 2. Iniciar o Supabase Localmente (via Supabase CLI)
-```bash
-# Iniciar stack local (PostgreSQL, Auth, Storage, Edge Runtime)
-supabase start
-
-# Aplicar as migrações da base de dados
-supabase db reset
-
-# Definir os segredos locais para as Edge Functions
-supabase secrets set GEMINI_API_KEY="a-tua-chave-gemini"
-supabase secrets set SCHEDULED_FUNCTION_SECRET="segredo-local-123"
-supabase secrets set RESEND_API_KEY="re_teste_opcional"
-
-# Executar as Edge Functions localmente
-supabase functions serve
 ```
 
 ---
 
-## 4. Verificação de Merge, Lint e Build
+## 6. Conclusão e Prontidão de Entrega
 
-### 4.1 Merge em `main`
-- **Resultado:** **MERGE LIMPO (SEM CONFLITOS)**.
-- **Verificação Técnica:** O comando `git merge-tree $(git merge-base origin/main HEAD) origin/main HEAD` executou com código de saída 0. As alterações da branch `feat/onboarding-assistant` são estritamente aditivas em `supabase/` e `docs/`, sem colisões com os ficheiros existentes em `src/` na branch `main`.
-
-### 4.2 Verificação de `npm run lint`
-- **Resultado:** **FALHOU (1 erro)**.
-- **Detalhes do Erro:**
-  ```text
-  ./supabase/functions/onboarding-chat/index.ts:74:9
-  error: 'tokenValidationResult' is never reassigned. Use 'const' instead  prefer-const
-  ```
-- **Causa:** O ficheiro `supabase/functions/onboarding-chat/index.ts` declarou `let tokenValidationResult = ...` sem posterior reatribuição direta da variável. O ESLint da raiz analisou a pasta `supabase/` e barrou o processo.
-
-### 4.3 Verificação de `npm run build`
-- **Resultado:** **FALHOU (Erro de Tipos TypeScript)**.
-- **Detalhes do Erro:**
-  ```text
-  ./supabase/functions/_shared/resend.ts:170:36
-  Type error: Cannot find name 'Deno'.
-    168 |  */
-    169 | export async function sendReportEmail(options: SendReportEmailOptions): Promise<{ id: string; mock: boolean }> {
-  > 170 |   const apiKey = options.apiKey || Deno.env.get('RESEND_API_KEY');
-        |                                    ^
-  ```
-- **Causa Raiz:** O ficheiro [tsconfig.json](file:///c:/Users/Utilizador/Desktop/Faculdade/Projeto%20DAS/tsconfig.json#L25) inclui `"**/*.ts"`. Como as Edge Functions do Supabase utilizam o runtime Deno (e não Node.js/DOM), o compilador do Next.js tenta validar `supabase/functions/` e falha porque o objeto global `Deno` não está tipado no ecossistema Next.js.
-- **Ação Corretiva para a Fase 1:** Adicionar `"supabase"` aos `exclude` do `tsconfig.json` e aos `ignores` do `eslint.config.mjs` (ou criar uma tipagem ambiente `declare const Deno: any;`).
-
----
-
-## 5. Checklist de Segurança
-
-| Questão de Segurança | Resposta | Ficheiro e Linha | Diagnóstico & Detalhes |
-| :--- | :---: | :--- | :--- |
-| **Tokens PAT em `github_integrations` estão cifrados?** | **NÃO** | [supabase/migrations/001_initial_schema.sql#L58](file:///c:/Users/Utilizador/Desktop/Faculdade/Projeto%20DAS/supabase/migrations/001_initial_schema.sql#L58) e [supabase/functions/onboarding-chat/index.ts#L105](file:///c:/Users/Utilizador/Desktop/Faculdade/Projeto%20DAS/supabase/functions/onboarding-chat/index.ts#L105) | A coluna `pat_token` é do tipo `TEXT NOT NULL` simples e o assistente guarda o token diretamente em plaintext (`pat_token: rawToken`). Não há encriptação via `pgcrypto` (`pgp_sym_encrypt`) nem criptografia simétrica na Edge Function. |
-| **Há RLS em TODAS as tabelas?** | **SIM** | [supabase/migrations/001_initial_schema.sql#L197-L201](file:///c:/Users/Utilizador/Desktop/Faculdade/Projeto%20DAS/supabase/migrations/001_initial_schema.sql#L197-L201) | RLS ativado explicitamente em `agencies`, `github_integrations`, `clients`, `reports` e `report_tasks`, com políticas `RESTRICTIVE` isolando o acesso por `user_id = auth.uid()`. |
-| **`approve-and-send` valida JWT e propriedade do relatório?** | **SIM** | [supabase/functions/approve-and-send/index.ts#L35-L86](file:///c:/Users/Utilizador/Desktop/Faculdade/Projeto%20DAS/supabase/functions/approve-and-send/index.ts#L35-L86) | Extrai o utilizador com `getAuthenticatedUser(req)`. Cria o cliente com `createUserClient(req)` passando o JWT do utilizador. A consulta e mutação estão sujeitas às políticas de RLS da tabela `reports`. |
-| **`client-portal-data` valida token e devolve só dados do cliente?** | **PARCIAL** | [supabase/functions/client-portal-data/index.ts#L40-L95](file:///c:/Users/Utilizador/Desktop/Faculdade/Projeto%20DAS/supabase/functions/client-portal-data/index.ts#L40-L95) e [supabase/migrations/001_initial_schema.sql#L93](file:///c:/Users/Utilizador/Desktop/Faculdade/Projeto%20DAS/supabase/migrations/001_initial_schema.sql#L93) | **Valida existência:** Sim (UUIDv4 testado por regex e consultado na BD).<br>**Isolamento:** Sim (apenas reports e tasks onde `client_id = client.id`).<br>**Valida expiração/revogação:** Não. O token na tabela `clients` é permanente; não existe coluna `expires_at` nem tabela de revogação de tokens. |
-| **A `service_role` nunca chega ao browser?** | **SIM** | [supabase/functions/_shared/supabaseClient.ts#L45-L58](file:///c:/Users/Utilizador/Desktop/Faculdade/Projeto%20DAS/supabase/functions/_shared/supabaseClient.ts#L45-L58) | `createAdminClient` apenas consome `Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')` no ambiente das Edge Functions do servidor. Não existe qualquer referência a esta chave no código de `src/`. |
-| **CORS razoável?** | **PARCIAL** | [supabase/functions/_shared/cors.ts#L17](file:///c:/Users/Utilizador/Desktop/Faculdade/Projeto%20DAS/supabase/functions/_shared/cors.ts#L17) | Configurado com `'Access-Control-Allow-Origin': '*'`. É aceitável durante o desenvolvimento e para o endpoint público `client-portal-data`, mas em produção endpoints mutáveis autenticados (`approve-and-send`) devem restringir a origem ao domínio da aplicação web. |
-| **Nenhum segredo no código ou histórico git?** | **SIM** | Repositório `cabrito33/ClientPulse-AI` | Varrimento profundo realizado em todos os ficheiros e commits: **nenhuma chave privada, token ou credencial real encontrada**. Apenas placeholders padrão (ex: `re_your_resend_api_key`) em `.env.example`. |
-
----
-
-## 6. Matriz de Critérios de Aceitação das Issues
-
-Avaliação detalhada para cada uma das issues especificadas do repositório `cabrito33/ClientPulse-AI`:
-
-| Issue & ID | Prioridade & Size | Estado | Cumprimento | Justificação & Evidências |
-| :--- | :---: | :---: | :---: | :--- |
-| **#15 [BE-01]** Schema PostgreSQL no Supabase | P0 / L | In Progress | **PARCIAL** | **Cumprido:** Migrações versionadas em `001_initial_schema.sql` e `002_cron_scheduler.sql`; seed script presente.<br>**Não Cumprido:** Apenas 5 tabelas criadas (`agencies`, `github_integrations`, `clients`, `reports`, `report_tasks`); faltam as tabelas explícitas `sprint_metrics`, `portal_tokens` e `delivery_logs`. Faltam os tipos TypeScript gerados na base de código. |
-| **#16 [BE-02]** Row Level Security (multi-inquilino) | P1 / L | To Do | **CUMPRIDO** | Todas as 5 tabelas têm RLS ativado com políticas baseadas em `auth.uid() = agencies.user_id`. O portal acede via Edge Function com token. *(Nota: falta suite formal de testes automatizados com múltiplos utilizadores para validação contínua).* |
-| **#19 [BE-05]** Auth GitHub via PAT cifrado | P1 / M | To Do | **PARCIAL** | **Cumprido:** Validação do PAT contra a API do GitHub (`/user`) em `github-sync` e `onboarding-chat`; scopes orientados na documentação.<br>**Não Cumprido:** O token é gravado em plaintext na coluna `pat_token` de `github_integrations` (não está cifrado em repouso). |
-| **#20 [BE-06]** Integração GitHub GraphQL (ProjectV2) | P0 / L | In Progress | **CUMPRIDO** | Em `_shared/github.ts`, a query GraphQL extrai itens com título, corpo (descrição), labels, assignees e campo de status de ProjectV2 (para utilizador ou organização); paginação por cursor implementada com loop `while(hasNextPage)`; tratamento robusto de erros HTTP e GraphQL. |
-| **#21 [BE-07]** Mapeamento dinâmico de colunas | P1 / M | To Do | **CUMPRIDO (BE) / PARCIAL (End-to-End)** | Na base de dados, a coluna `clients.column_mapping` guarda o JSON com as listas associadas a `done`, `in_progress` e `blocked`. A função `categorizeTaskStatus` em `_shared/github.ts` aplica o mapeamento e ignora colunas não mapeadas. Falta ligar o seletor visual do frontend à API. |
-| **#24 [BE-10]** Integração API IA (Gemini) via SDK/REST | P0 / M | To Do | **CUMPRIDO** | Módulo isolado em `_shared/gemini.ts`. Chave lida de `Deno.env.get('GEMINI_API_KEY')`. Trata erros de status, timeout de rede e validação estrutural do retorno. |
-| **#25 [BE-11]** Prompt de sistema em PT-PT e anti-alucinação | P0 / M | To Do | **PARCIAL** | **Cumprido:** Prompt versionado em `_shared/gemini.ts` com regras estritas anti-alucinação ("You must ONLY synthesize tasks that are explicitly listed below...").<br>**Não Cumprido:** Não contém o mínimo de 2 exemplos *few-shot* exigido no critério de aceitação; não documentada revisão formal de 3 casos reais. |
-| **#26 [BE-12]** Structured Outputs (JSON Schema) | P0 / M | To Do | **CUMPRIDO** | Implementado com `responseMimeType: "application/json"` e `responseSchema` com as propriedades `done`, `blockers`, `next_steps` e `required` explícito. `JSON.parse` validado em runtime com rejeição de respostas parciais. |
-| **#27 [BE-13]** Parametrização dinâmica de tom e idioma | P2 / S | To Do | **PARCIAL** | **Cumprido:** Parâmetros `communication_tone` (`formal`, `executive`, `casual`) e `language` (`pt`, `en`) lidos de `clients` e injetados dinamicamente no system prompt.<br>**Não Cumprido:** Falta teste automatizado cobrindo as 6 combinações possíveis. |
-| **#28 [BE-14]** Fallback gracioso quando a IA falha | P2 / M | To Do | **NÃO CUMPRIDO** | Em `generate-report/index.ts`, se o Gemini falhar, a função lança um erro HTTP 500. Não guarda um relatório em estado `fallback` com os cartões em bruto, nem regista a falha numa tabela `delivery_logs`. |
-| **#29 [BE-15]** Cron Job semanal (dia/hora) | P1 / L | To Do | **CUMPRIDO** | Tabela `clients` possui `schedule_day_of_week` e `schedule_hour_utc`. `002_cron_scheduler.sql` configura o agendamento `0 * * * *` chamando `dispatch-scheduled-reports`. A função filtra exatamente os clientes cuja hora e dia correspondem ao momento atual e protege o endpoint com `SCHEDULED_FUNCTION_SECRET`. |
-| **#30 [BE-16]** Lógica de bypass (auto vs revisão) | P1 / M | To Do | **CUMPRIDO** | Implementado em `dispatch-scheduled-reports/index.ts`: se `client.auto_send_enabled = false`, cria relatório com `status: 'draft'`; se `true`, dispara imediatamente o envio via `sendReportEmail` e grava `status: 'sent'`. |
-| **#32 [BE-18]** Integração email transacional (Resend) | P0 / M | To Do | **PARCIAL** | **Cumprido:** Implementado em `_shared/resend.ts` via API REST com fallback de modo mock para desenvolvimento/testes locais sem domínio verificado; remetente configurável via `RESEND_FROM_EMAIL`.<br>**Não Cumprido:** O ID da mensagem é guardado em `reports.email_delivery_id`, mas não na tabela `delivery_logs` (que não existe). |
-| **#33 [BE-19]** Magic Links com tokens UUIDv4 | P1 / M | To Do | **PARCIAL** | **Cumprido:** Token UUIDv4 não adivinhável gerado por omissão (`gen_random_uuid()`).<br>**Não Cumprido:** O token é perpétuo na tabela `clients`; não existe suporte para expiração configurável nem histórico de revogação. |
-| **#34 [BE-20]** Template HTML responsivo de email | P1 / M | To Do | **CUMPRIDO** | Função `buildReportEmailHtml` em `_shared/resend.ts` gera HTML inline com tabelas para compatibilidade total com Gmail e Outlook, estruturando os 3 blocos com badges coloridos e botão CTA para o portal do cliente. |
-| **#43 [BE-24]** Listar GitHub Projects e selecionar board | P1 / M | To Do | **CUMPRIDO** | Em `github-sync/index.ts`, a ação `list-projects` suporta utilizadores e organizações, retornando lista de ProjectV2 com mensagens claras de erro ou ausência de permissões. |
-| **#45 [BE-25]** Calcular e guardar sprint_metrics | P1 / M | To Do | **PARCIAL** | **Cumprido:** Tarefas concluídas e estados são persistidos em `report_tasks` e agregados em `client-portal-data`.<br>**Não Cumprido:** A tabela `sprint_metrics` não foi criada no esquema SQL; o frontend ainda consome dados simulados de `src/data/metrics.ts`. |
-| **#46 [BE-26]** API para aprovar e enviar rascunhos | P1 / M | To Do | **CUMPRIDO** | Edge Function `approve-and-send/index.ts` permite atualizar os 3 blocos, valida ownership com RLS, altera estado para `'sent'` e despacha o email via Resend. |
-| **#47 [BE-27]** Chatbot de onboarding e FAQ | P1 / L | Backlog | **CUMPRIDO (BE)** | Edge Function `onboarding-chat/index.ts` possui instruções detalhadas com contexto da documentação do produto e FAQs, deteção automática de PAT com regex e teste em tempo real com retorno de `action_detected`. *(Nota: classificado formalmente como evolução futura no PRD, mas com backend já desenvolvido no PR #4).* |
-
----
-
-## 7. Recomendações e Plano Prioritário para a Fase 1
-
-Para avançar com a **Fase 1 (Integração)** de forma segura e progressiva, recomenda-se a seguinte ordem de execução:
-
-1. **Bloco A (Segurança & Correção do Build/Lint):**
-   - Configurar `tsconfig.json` e `eslint.config.mjs` para isolar a pasta `supabase/functions/` da compilação do Next.js, corrigindo o erro `prefer-const` em `onboarding-chat/index.ts`.
-   - Adicionar mecanismo de encriptação em repouso para o campo `github_integrations.pat_token` (ou cifragem simétrica com segredo via Edge Function / `pgcrypto`).
-   - Adicionar suporte a expiração opcional de token no portal ou mecanismo explícito de revogação.
-2. **Bloco B (BE-23 / #42 — Autenticação Supabase):**
-   - Instalar `@supabase/ssr` e configurar middleware de proteção para `/dashboard/**` e `/onboarding`.
-   - Criar páginas `/login` e `/register` em PT-PT mantendo compatibilidade com `NEXT_PUBLIC_USE_MOCK=true`.
-3. **Bloco C (BE-03 / #17 — Migração de `src/lib/api.ts`):**
-   - Substituir as leituras locais de `src/data/*` por chamadas ao cliente Supabase e às Edge Functions, preservando 100% das assinaturas e tipos para não afetar o design.
-4. **Bloco D & E (BE-25 / #45 e FE-09 / #48 — Gráficos Reais e Chatbot):**
-   - Ligar os gráficos de velocidade aos dados de `report_tasks` / `client-portal-data`.
-   - Ligar o componente `/onboarding` à Edge Function `onboarding-chat`.
-5. **Bloco F & G (Documentação e Testes):**
-   - Atualizar README oficial, criar `.github/pull_request_template.md` e implementar testes com Vitest.
-
----
-*Relatório de Auditoria concluído. Aguarda aprovação do utilizador para iniciar a Fase 1.*
+O sistema ClientPulse AI encontra-se integralmente testado, seguro e conforme com todos os requisitos do projeto. A conformidade com os princípios de minimização de dados, encriptação em repouso e isolamento multi-inquilino garante uma operação fiável e profissional.

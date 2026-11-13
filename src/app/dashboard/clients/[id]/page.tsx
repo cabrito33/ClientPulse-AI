@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonClass } from "@/components/ui/button";
 import { CompletedBySprintChart } from "@/components/dashboard/charts";
 import { GenerateReportButton } from "@/components/dashboard/generate-report-button";
+import { RenewPortalLinkButton } from "@/components/dashboard/renew-portal-link-button";
 import { ClientAutoSendToggle } from "@/components/dashboard/client-autosend-toggle";
 import { ClientColumnMappingCard } from "@/components/dashboard/client-column-mapping";
 import { formatDate, formatDateTime } from "@/lib/utils";
@@ -72,6 +73,7 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
             <ArrowUpRight className="h-3.5 w-3.5" />
             Abrir portal do cliente
           </Link>
+          <RenewPortalLinkButton clientId={client.id} />
           <GenerateReportButton clientId={client.id} />
           {reports[0] && (
             <Link

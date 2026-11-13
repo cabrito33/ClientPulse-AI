@@ -191,6 +191,26 @@ Deno.serve(async (req: Request) => {
         // If bypass is active, immediately dispatch email
         if (isBypass && client.email) {
           try {
+            // Ensure portal token record is active with configured expiration (BE-19)
+            if (client.portal_token) {
+              try {
+                const expirationDays = Number(Deno.env.get('PORTAL_TOKEN_EXPIRATION_DAYS') || '90') || 90;
+                const expiresAt = new Date(Date.now() + expirationDays * 86400000).toISOString();
+                await supabase
+                  .from('portal_tokens')
+                  .upsert({
+                    client_id: client.id,
+                    agency_id: client.agency_id,
+                    token: client.portal_token,
+                    is_active: true,
+                    revoked_at: null,
+                    expires_at: expiresAt,
+                  }, { onConflict: 'token' });
+              } catch (tokenErr) {
+                console.warn('[dispatch-scheduled-reports] Failed to ensure portal token record:', tokenErr);
+              }
+            }
+
             const emailResult = await sendReportEmail({
               toEmail: client.email,
               clientName: client.name,

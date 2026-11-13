@@ -99,6 +99,26 @@ Deno.serve(async (req: Request) => {
     const summaryBlockers = updated_blocks?.blockers ?? report.summary_blockers;
     const summaryNextSteps = updated_blocks?.next_steps ?? report.summary_next_steps;
 
+    // 4.5 Ensure portal token is active with configured expiration (BE-19)
+    if (client.portal_token) {
+      try {
+        const expirationDays = Number(Deno.env.get('PORTAL_TOKEN_EXPIRATION_DAYS') || '90') || 90;
+        const expiresAt = new Date(Date.now() + expirationDays * 86400000).toISOString();
+        await supabase
+          .from('portal_tokens')
+          .upsert({
+            client_id: client.id,
+            agency_id: report.agency_id,
+            token: client.portal_token,
+            is_active: true,
+            revoked_at: null,
+            expires_at: expiresAt,
+          }, { onConflict: 'token' });
+      } catch (tokenErr) {
+        console.warn('[approve-and-send] Failed to ensure portal token record:', tokenErr);
+      }
+    }
+
     // 5. Send Transactional Email via Resend
     const appUrl = Deno.env.get('NEXT_PUBLIC_APP_URL') || 'http://localhost:3000';
     let emailResult: { id: string; mock: boolean };
@@ -197,7 +217,7 @@ Deno.serve(async (req: Request) => {
         email_delivery_id: emailResult.id,
         is_mock_delivery: emailResult.mock,
         mock: emailResult.mock,
-        portal_url: `${appUrl.replace(/\/$/, '')}/portal?token=${client.portal_token}`,
+        portal_url: `${appUrl.replace(/\/$/, '')}/portal/${client.portal_token}`,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

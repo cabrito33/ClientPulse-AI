@@ -6,7 +6,7 @@
 // Dispatches professional executive HTML emails to clients using Resend.
 // Contains:
 // 1. Responsive, clean HTML email template.
-// 2. Direct button link to the Zero-Login Client Portal (/portal?token=UUID).
+// 2. Direct button link to the Zero-Login Client Portal (/portal/[token]).
 // 3. Mock/Preview Mode: Allows local testing and grading even if the team
 //    does not yet have a verified custom domain on Resend!
 // ==============================================================================
@@ -34,7 +34,7 @@ export interface SendReportEmailOptions {
 export function buildReportEmailHtml(options: SendReportEmailOptions): string {
   const isPt = options.language !== 'en';
   const baseUrl = (options.appUrl || 'http://localhost:3000').replace(/\/$/, '');
-  const portalUrl = `${baseUrl}/portal?token=${options.portalToken}`;
+  const portalUrl = `${baseUrl}/portal/${options.portalToken}`;
   const trackingPixelUrl = `${baseUrl}/api/track/open?${
     options.reportId ? `reportId=${options.reportId}` : `token=${options.portalToken}`
   }`;
@@ -193,7 +193,7 @@ export async function sendReportEmail(options: SendReportEmailOptions): Promise<
     console.log(`To: ${options.toEmail}`);
     console.log(`From: ${fromEmail}`);
     console.log(`Subject: ${subject}`);
-    console.log(`Portal Link: ${(options.appUrl || 'http://localhost:3000')}/portal?token=${options.portalToken}`);
+    console.log(`Portal Link: ${(options.appUrl || 'http://localhost:3000')}/portal/${options.portalToken}`);
     console.log('----------------------------------------------------');
     return {
       id: `mock_email_${Date.now()}`,

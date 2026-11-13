@@ -120,7 +120,7 @@ The client receives a professional email with the summary and a secure link to t
 *So that I can check the project status without creating an account or memorizing credentials.*
 
 **Acceptance Criteria:**
-- Email links contain a unique, non-guessable client UUID token (`/portal?token=<CLIENT_UUID>`).
+- Email links contain a unique, non-guessable client UUID token (`/portal/<CLIENT_UUID>`).
 - The page is strictly read-only, showing the week's report, previous history, and a simple chart of tasks completed per sprint.
 
 ---
