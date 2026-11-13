@@ -2,7 +2,7 @@
 
 Relatórios semanais de progresso para clientes, gerados com IA a partir do **GitHub Projects**.
 
-Projeto desenvolvido no âmbito da unidade curricular de **Desenvolvimento de Software Ágil** ([CURSO / INSTITUIÇÃO], 2026/27).
+Projeto desenvolvido no âmbito da unidade curricular de **Desenvolvimento de Software Ágil** TDA/TDSA ISCTE Sintra, 2026/27).
 
 **Demo:** https://weekly-client-reports.vercel.app
 **Equipa:** 
