@@ -277,6 +277,25 @@ Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.s
   - Tenta modelo secundário (`gemini-3.7-flash` ou `GEMINI_FALLBACK_MODEL`) se o principal falhar.
   - Caso a IA esteja indisponível ou sem chave configurada, ativa o **fallback determinístico** de `_shared/faq.ts` por análise de palavras-chave, garantindo continuidade sem erros HTTP 500.
 
+### 5.8 Política de Privacidade e Minimização de Dados Enviados à IA (DOC-04 / Issue #51)
+- **Documento de Referência:** [`docs/PRIVACY.md`](PRIVACY.md).
+- **Enquadramento:** Resolução do risco identificado na secção 7 do `docs/RELATORIO_VALIDACAO.md` em cumprimento do princípio de Minimização de Dados (RGPD / GDPR Artigo 5.º, n.º 1, al. c).
+- **Campos Estritamente Transmitidos à IA (Google Gemini):**
+  1. `title`: Título da tarefa/cartão.
+  2. `description`: Descrição da tarefa higienizada de blocos de código/backticks e truncada a 300 caracteres via `sanitizeTaskDescription` em `supabase/functions/_shared/github.ts`.
+  3. `status`: Coluna/estado no GitHub Project (ex.: Concluído, Em curso, Bloqueado).
+  4. `labels`: Etiquetas temáticas associadas à tarefa.
+  5. `assignee`: Nome de utilizador (login GitHub) do responsável.
+- **Campos Estritamente Excluídos:**
+  - Código-fonte, commits, branches, árvores de ficheiros git e diffs de PRs nunca são acedidos nem guardados.
+  - Credenciais (PATs do GitHub), chaves de API, variáveis de ambiente ou senhas nunca são transmitidas nos prompts.
+  - UUIDs e identificadores internos de base de dados são descartados na camada de minimização (`minimizeTaskForAI` em `supabase/functions/_shared/gemini.ts`).
+- **Avisos Transparentes na Interface do Utilizador:**
+  - Ecrã de Revisão do Relatório (`/dashboard/reports/[id]`): Banner informativo (`ShieldCheck`) indicando síntese com Gemini, dados estritamente minimizados e recomendação de revisão humana antes do envio.
+  - Onboarding Chat (`/onboarding`): Disclaimer claro de privacidade abaixo do campo de entrada do PulseBot.
+  - Ações de Geração no Dashboard: Legenda identificando síntese por IA restrita a metadados.
+- **Human-in-the-Loop:** Todos os relatórios gerados por IA iniciam como rascunhos (`draft`), permitindo ao gestor afinar os 3 blocos antes do disparo ao cliente final.
+
 ---
 
 ## 6. Technical Risks & Mitigation Strategies
@@ -284,6 +303,7 @@ Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.s
 | Risk | Impact | Probability | Mitigation Strategy |
 | :--- | :--- | :--- | :--- |
 | **Gemini Hallucinations or Schema Deviation** | Reports contain invented tasks or invalid formatting. | Medium | Use Gemini Flash (default: `gemini-3.8-flash`, configurable via `GEMINI_MODEL`) with structured output schemas (`responseSchema: { type: "OBJECT", properties: {...} }`). Set `temperature: 0.2` and inject strict system instructions: *"Only summarize tasks present in the input JSON. Never invent features or milestones."* |
+| **Data Privacy & Leakage to External AI** | Sensitive business or code data exposed to external LLMs. | Medium | Strict data minimization (`minimizeTaskForAI` in `_shared/gemini.ts`): only `title`, `description` (code stripped, max 300 chars), `status`, `labels`, `assignee` are sent. Zero source code access. Visible UI disclaimers and human-in-the-loop review. Full policy documented in [`docs/PRIVACY.md`](PRIVACY.md). |
 | **Resend Free-Tier Domain Limits** | Cannot send emails to external client domains during testing. | High | Implement a **Mock/Preview Mode** in `resend.ts`: when running in development or without a custom domain, log the rendered email HTML to Supabase Studio or send only to the developer's registered email (`onboarding@resend.dev`). |
 | **GitHub GraphQL API Quota & Changes** | GraphQL queries fail or rate-limit the agency account. | Low | Query only necessary fields (`title`, `state`, `assignees`, `labels`, `updatedAt`, `closedAt`) with pagination limits (`first: 100`). Cache raw responses in `reports.raw_github_data`. |
 | **`pg_cron` UTC Scheduling Offsets** | Reports generate at the wrong hour due to timezone differences. | Medium | Store all schedule definitions with an explicit UTC hour (`schedule_hour_utc: 9`). Document for the user that 09:00 UTC corresponds to 10:00 Lisbon/London time (or 09:00 WET). |

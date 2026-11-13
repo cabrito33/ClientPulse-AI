@@ -21,6 +21,7 @@ const GITHUB_GRAPHQL_ENDPOINT = 'https://api.github.com/graphql';
 export interface GitHubTaskItem {
   id: string;
   title: string;
+  description?: string | null;
   status: string; // The raw column name on GitHub (e.g. "Done", "In Progress")
   statusCategory: 'done' | 'in_progress' | 'blocked' | 'other';
   assignee: string | null;
@@ -29,6 +30,22 @@ export interface GitHubTaskItem {
   closedAt: string | null;
   itemType: 'issue' | 'pull_request' | 'draft_issue';
   url?: string;
+}
+
+/**
+ * Strips code fences, backticks, HTML tags and collapses whitespace
+ * from task descriptions to prevent code leakage and minimize tokens sent to external AI (Issue #51).
+ */
+export function sanitizeTaskDescription(raw: string | null | undefined, maxChars = 300): string | null {
+  if (!raw) return null;
+  const stripped = raw
+    .replace(/```[\s\S]*?```/g, '') // remove multi-line code fences to prevent code leakage
+    .replace(/`[^`]*`/g, '')        // remove inline code spans
+    .replace(/<[^>]*>/g, '')        // remove HTML tags
+    .replace(/\s+/g, ' ')           // collapse whitespace
+    .trim();
+  if (!stripped) return null;
+  return stripped.length > maxChars ? `${stripped.slice(0, maxChars)}...` : stripped;
 }
 
 /**
@@ -244,6 +261,7 @@ export async function fetchBoardTasks(
                   id
                   number
                   title
+                  bodyText
                   state
                   closedAt
                   updatedAt
@@ -263,6 +281,7 @@ export async function fetchBoardTasks(
                   id
                   number
                   title
+                  bodyText
                   state
                   closedAt
                   updatedAt
@@ -276,6 +295,7 @@ export async function fetchBoardTasks(
                 ... on DraftIssue {
                   id
                   title
+                  body
                   updatedAt
                 }
               }
@@ -295,6 +315,8 @@ export async function fetchBoardTasks(
       id?: string;
       number?: number;
       title?: string;
+      bodyText?: string;
+      body?: string;
       state?: string;
       closedAt?: string | null;
       updatedAt?: string;
@@ -366,10 +388,12 @@ export async function fetchBoardTasks(
     const labels = content.labels?.nodes?.map((l: { name: string }) => l.name) ?? [];
     const closedAt = content.closedAt ?? null;
     const updatedAt = content.updatedAt ?? item.updatedAt;
+    const description = sanitizeTaskDescription(content.bodyText ?? content.body);
 
     parsedTasks.push({
       id: content.id ?? item.id,
       title: content.title ?? 'Untitled Card',
+      description,
       status: statusName,
       statusCategory: category,
       assignee: assignees.length > 0 ? assignees.join(', ') : null,

@@ -14,6 +14,7 @@ import {
   Bot,
   AlertTriangle,
   Loader2,
+  ShieldCheck,
 } from "lucide-react";
 import type { Client, Report, ReportSection } from "@/data/types";
 import { Badge } from "@/components/ui/badge";
@@ -271,6 +272,27 @@ export function ReportReview({
           )}
         </div>
       </div>
+
+      {!report.generatedWithoutAi && (
+        <div
+          role="region"
+          aria-label="Aviso de privacidade e inteligência artificial"
+          className="mt-5 flex items-start gap-3 rounded-xl border border-line bg-surface/80 px-4 py-3 text-[13px] text-ink"
+        >
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+          <div className="flex-1 text-[12px] leading-relaxed text-muted">
+            <p className="font-semibold text-ink flex items-center gap-1.5">
+              <span>Síntese gerada por IA externa (Google Gemini)</span>
+              <span className="inline-flex items-center rounded-md bg-paper px-1.5 py-0.5 text-[10px] font-medium text-muted-soft border border-line">
+                Minimização de Dados
+              </span>
+            </p>
+            <p className="mt-0.5">
+              Apenas os metadados estritamente necessários das tarefas (título, descrição, estado, etiquetas e responsáveis) foram transmitidos à IA. O código-fonte dos teus repositórios nunca é lido nem guardado. Como qualquer modelo de IA pode cometer imprecisões, revê e afina os blocos abaixo antes de aprovar o envio.
+            </p>
+          </div>
+        </div>
+      )}
 
       {report.generatedWithoutAi && (
         <div

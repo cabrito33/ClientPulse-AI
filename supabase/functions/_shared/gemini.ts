@@ -62,15 +62,16 @@ LANGUAGE & TONE:
 - Write strictly in ${langText}.
 - Use a ${tone} tone: ${toneDescriptions[tone]}
 
-STRICT ANTI-HALLUCINATION RULES (CRITICAL):
-1. ONLY describe work supported directly by the provided task titles, labels, or statuses.
-2. NEVER invent features, completed milestones, metrics, or team members that are not in the input data.
-3. Translate technical developer jargon (e.g. "fix NPE in authController.ts", "refactor db index") into clear business value (e.g. "Melhoria na estabilidade da autenticação e proteção de sessão", "Otimização da performance da base de dados").
-4. If there are NO blocked tasks in the input, explicitly state:
+STRICT ANTI-HALLUCINATION & PRIVACY RULES (CRITICAL):
+1. PRIVACY & DATA MINIMIZATION: You receive strictly minimized task metadata (title, description, status, labels, assignees). Never infer or invent source code, file contents, credentials, or external private data.
+2. ONLY describe work supported directly by the provided task titles, descriptions, labels, or statuses.
+3. NEVER invent features, completed milestones, metrics, or team members that are not in the input data.
+4. Translate technical developer jargon (e.g. "fix NPE in authController.ts", "refactor db index") into clear business value (e.g. "Melhoria na estabilidade da autenticação e proteção de sessão", "Otimização da performance da base de dados").
+5. If there are NO blocked tasks in the input, explicitly state:
    - PT: "Nenhum impedimento ativo esta semana. Todas as atividades seguem o planeamento previsto."
    - EN: "No active blockers this week. All deliverables are progressing as planned."
-5. If there are NO completed tasks in the input, state that the team focused on in-progress deliverables and specify what is currently underway.
-6. Format each block with clear bullet points (using '• ') separated by newlines.
+6. If there are NO completed tasks in the input, state that the team focused on in-progress deliverables and specify what is currently underway.
+7. Format each block with clear bullet points (using '• ') separated by newlines.
 
 EXEMPLOS DE ENTRADA E SAÍDA ESPERADA EM PORTUGUÊS DE PORTUGAL (FEW-SHOT):
 
@@ -202,6 +203,35 @@ export async function callGeminiModel(
 }
 
 /**
+ * Strict Data Minimization Helper (Issue #51 / DOC-04).
+ * Ensures ONLY the strictly necessary task metadata fields are transmitted to Google Gemini:
+ * - title (string)
+ * - description (string | undefined, sanitized and truncated to max 300 chars)
+ * - status (string)
+ * - labels (string[])
+ * - assignee (string | null)
+ *
+ * Excludes: database internal IDs, card URLs, closed timestamps, commit SHAs, git diffs, file trees, or repository tokens.
+ */
+export interface MinimizedTaskForAI {
+  title: string;
+  description?: string;
+  status: string;
+  labels: string[];
+  assignee: string | null;
+}
+
+export function minimizeTaskForAI(t: GitHubTaskItem): MinimizedTaskForAI {
+  return {
+    title: t.title,
+    ...(t.description ? { description: t.description } : {}),
+    status: t.status,
+    labels: t.labels,
+    assignee: t.assignee,
+  };
+}
+
+/**
  * Calls the Google Gemini API to generate the structured 3-block report.
  * Tries the primary model with retries, then falls back to secondary model if primary fails.
  */
@@ -217,27 +247,15 @@ export async function generateExecutiveReport(
   const fallbackModel = getGeminiFallbackModel();
   const systemInstruction = buildSystemInstruction(options.language, options.tone);
 
-  // Prepare input payload summary for the prompt
+  // Prepare input payload summary for the prompt with strict data minimization
   const promptData = {
     client_name: options.clientName,
     company: options.companyName ?? 'N/A',
     custom_manager_notes: options.customNotes ?? 'None',
     tasks_summary: {
-      completed_tasks: options.tasks.done.map((t) => ({
-        title: t.title,
-        assignee: t.assignee,
-        labels: t.labels,
-      })),
-      in_progress_tasks: options.tasks.inProgress.map((t) => ({
-        title: t.title,
-        assignee: t.assignee,
-        labels: t.labels,
-      })),
-      blocked_tasks: options.tasks.blocked.map((t) => ({
-        title: t.title,
-        assignee: t.assignee,
-        labels: t.labels,
-      })),
+      completed_tasks: options.tasks.done.map(minimizeTaskForAI),
+      in_progress_tasks: options.tasks.inProgress.map(minimizeTaskForAI),
+      blocked_tasks: options.tasks.blocked.map(minimizeTaskForAI),
     },
   };
 

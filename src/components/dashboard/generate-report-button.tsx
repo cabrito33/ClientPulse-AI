@@ -43,6 +43,9 @@ export function GenerateReportButton({ clientId }: { clientId: string }) {
           </>
         )}
       </button>
+      <span className="text-[10.5px] text-muted-soft">
+        Síntese por IA (Google Gemini) · Apenas metadados
+      </span>
       {error && (
         <p className="flex items-center gap-1 text-[11px] font-medium text-accent">
           <AlertCircle className="h-3 w-3 shrink-0" aria-hidden="true" />

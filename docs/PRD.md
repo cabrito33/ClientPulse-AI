@@ -159,7 +159,7 @@ O cliente recebe um e-mail profissional com a síntese e um link seguro de acess
 - **APIs & Conectividade:** Uso da API REST / GraphQL do GitHub. Autenticação via OAuth 2.0 ou Personal Access Tokens armazenados de forma cifrada.
 - **Modelo de IA:** OpenAI API (`gpt-4o-mini` / `gpt-4o`) ou Google Gemini API, utilizando técnicas de *few-shot prompting* com regras estritas para evitar alucinações.
 - **Segurança de Dados & Privacidade:** 
-  - **Não armazenamento de código:** Apenas metadados de tarefas (*title*, *description*, *status*, *assignees*, *labels*) são processados. O código-fonte dos repositórios nunca é lido nem guardado.
+  - **Não armazenamento de código & Minimização de Dados (Issue #51):** Apenas metadados de tarefas (*title*, *description*, *status*, *assignees*, *labels*) são processados. O código-fonte dos repositórios nunca é lido nem guardado. Política completa de privacidade e minimização documentada em [`docs/PRIVACY.md`](PRIVACY.md).
   - **Secrets:** Chaves de API e credenciais guardadas estritamente em variáveis de ambiente (`.env`).
   - **Portal do Cliente:** Acesso protegido por URLs obscuros com Tokens UUIDv4 de uso único ou com tempo de expiração.
 
