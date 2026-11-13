@@ -23,6 +23,7 @@ import {
   fetchProjectColumnsAction,
   checkGitHubIntegrationStatusAction,
   completeOnboardingAction,
+  trackOnboardingStartedAction,
   type OnboardingChatMessage,
 } from "@/app/actions/onboarding";
 
@@ -170,6 +171,7 @@ export default function OnboardingPage() {
   );
 
   useEffect(() => {
+    trackOnboardingStartedAction();
     async function initCheck() {
       try {
         const status = await checkGitHubIntegrationStatusAction();

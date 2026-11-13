@@ -66,6 +66,8 @@ Deno.serve(async (req: Request) => {
         summary_done,
         summary_blockers,
         summary_next_steps,
+        original_summary,
+        created_at,
         clients:client_id (
           id,
           name,
@@ -176,7 +178,48 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const now = new Date().toISOString();
+    const now = new Date();
+    const nowIso = now.toISOString();
+
+    // Helper: compute line changes between original and updated blocks
+    const calculateLineDiffCount = (origText: string, updatedText: string): number => {
+      const origLines = origText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const newLines = updatedText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+      const origCounts = new Map<string, number>();
+      for (const l of origLines) {
+        origCounts.set(l, (origCounts.get(l) || 0) + 1);
+      }
+
+      let matches = 0;
+      for (const l of newLines) {
+        const c = origCounts.get(l) || 0;
+        if (c > 0) {
+          matches++;
+          origCounts.set(l, c - 1);
+        }
+      }
+
+      const removed = origLines.length - matches;
+      const added = newLines.length - matches;
+      return removed + added;
+    };
+
+    const origSummary = (report.original_summary as Record<string, string> | null) ?? {};
+    const origDone = origSummary.done ?? report.summary_done ?? '';
+    const origBlockers = origSummary.blockers ?? report.summary_blockers ?? '';
+    const origNext = origSummary.next_steps ?? report.summary_next_steps ?? '';
+
+    const editCount =
+      calculateLineDiffCount(origDone, summaryDone) +
+      calculateLineDiffCount(origBlockers, summaryBlockers) +
+      calculateLineDiffCount(origNext, summaryNextSteps);
+
+    const createdAtDate = report.created_at ? new Date(report.created_at) : now;
+    const timeToApproveSeconds = Math.max(
+      0,
+      Math.round((now.getTime() - createdAtDate.getTime()) / 1000)
+    );
 
     // 6. Update Report in Database
     const { error: updateError } = await supabase
@@ -186,8 +229,10 @@ Deno.serve(async (req: Request) => {
         summary_done: summaryDone,
         summary_blockers: summaryBlockers,
         summary_next_steps: summaryNextSteps,
-        approved_at: now,
-        sent_at: now,
+        edit_count: editCount,
+        time_to_approve_seconds: timeToApproveSeconds,
+        approved_at: nowIso,
+        sent_at: nowIso,
         email_delivery_id: emailResult.id,
       })
       .eq('id', report.id);
@@ -205,7 +250,7 @@ Deno.serve(async (req: Request) => {
       email_service: 'resend',
       recipient_email: client.email,
       message_id: emailResult.id,
-      sent_at: now,
+      sent_at: nowIso,
     });
 
     return new Response(

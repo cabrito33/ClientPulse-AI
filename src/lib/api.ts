@@ -621,6 +621,55 @@ export async function getPortalTokenStatus(
   return "not_found";
 }
 
+export interface SuccessMetrics {
+  agencyId?: string;
+  onboardingDurationSeconds: number | null;
+  totalReports: number;
+  totalApprovedOrSent: number;
+  totalSent: number;
+  avgEditCount: number;
+  pctApprovedUnder3Edits: number;
+  avgTimeToApproveSeconds: number;
+  pctOpened24h: number;
+  pctGeneratedWithoutAi: number;
+}
+
+/**
+ * Fetches success metrics from the security_invoker view 'success_metrics' (BE-29 / DOC-02).
+ */
+export async function getSuccessMetrics(): Promise<SuccessMetrics | null> {
+  const supabase = await createClient();
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase.from("success_metrics") as any)
+      .select("*")
+      .maybeSingle();
+
+    if (error || !data) {
+      return null;
+    }
+
+    return {
+      agencyId: data.agency_id,
+      onboardingDurationSeconds:
+        typeof data.onboarding_duration_seconds === "number"
+          ? data.onboarding_duration_seconds
+          : null,
+      totalReports: Number(data.total_reports) || 0,
+      totalApprovedOrSent: Number(data.total_approved_or_sent) || 0,
+      totalSent: Number(data.total_sent) || 0,
+      avgEditCount: Number(data.avg_edit_count) || 0,
+      pctApprovedUnder3Edits: Number(data.pct_approved_under_3_edits) || 0,
+      avgTimeToApproveSeconds: Number(data.avg_time_to_approve_seconds) || 0,
+      pctOpened24h: Number(data.pct_opened_24h) || 0,
+      pctGeneratedWithoutAi: Number(data.pct_generated_without_ai) || 0,
+    };
+  } catch (err) {
+    console.warn("[getSuccessMetrics] Error querying view:", err);
+    return null;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /*  Dashboard                                                          */
 /* ------------------------------------------------------------------ */

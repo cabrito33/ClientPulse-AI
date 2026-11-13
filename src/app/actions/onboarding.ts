@@ -324,6 +324,17 @@ export async function completeOnboardingAction(
       }
     }
 
+    // Record onboarding_completed_at for the agency if first client is created (C2)
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase.from("agencies") as any)
+        .update({ onboarding_completed_at: new Date().toISOString() })
+        .eq("id", agencyId)
+        .is("onboarding_completed_at", null);
+    } catch (trackErr) {
+      console.warn("[completeOnboardingAction] Failed to record completion timestamp:", trackErr);
+    }
+
     let generatedReportId: string | null = null;
     try {
       const res = await invokeEdgeFunction<{ report_id?: string }>(
@@ -352,5 +363,34 @@ export async function completeOnboardingAction(
     const errorMsg =
       err instanceof Error ? err.message : "Erro ao concluir configuração.";
     return { success: false, error: errorMsg };
+  }
+}
+
+/**
+ * Records onboarding_started_at for the agency on first visit to /onboarding (if null) (C2).
+ */
+export async function trackOnboardingStartedAction(): Promise<void> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: agency } = await (supabase.from("agencies") as any)
+      .select("id, onboarding_started_at")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (agency && !agency.onboarding_started_at) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase.from("agencies") as any)
+        .update({ onboarding_started_at: new Date().toISOString() })
+        .eq("id", agency.id)
+        .is("onboarding_started_at", null);
+    }
+  } catch (err) {
+    console.warn("[trackOnboardingStartedAction] Ignored:", err);
   }
 }

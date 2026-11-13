@@ -10,7 +10,14 @@ import {
   Sparkles,
   AlertTriangle,
 } from "lucide-react";
-import { getClients, getDashboardSummary, getReports, getSprintCards, getSprintMetrics } from "@/lib/api";
+import {
+  getClients,
+  getDashboardSummary,
+  getReports,
+  getSprintCards,
+  getSprintMetrics,
+  getSuccessMetrics,
+} from "@/lib/api";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
@@ -42,6 +49,23 @@ function getLisbonFormattedDate(): string {
   return formatter.format(new Date());
 }
 
+function formatDuration(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || isNaN(seconds) || seconds <= 0) {
+    return "—";
+  }
+  if (seconds < 60) {
+    return `${seconds} s`;
+  }
+  const mins = Math.floor(seconds / 60);
+  const remainingSecs = seconds % 60;
+  if (mins < 60) {
+    return remainingSecs > 0 ? `${mins}m ${remainingSecs}s` : `${mins} min`;
+  }
+  const hours = Math.floor(mins / 60);
+  const remainingMins = mins % 60;
+  return `${hours}h ${remainingMins}m`;
+}
+
 function getIsoWeekNumber(d: Date = new Date()): number {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   const dayNum = date.getUTCDay() || 7;
@@ -65,11 +89,12 @@ const columnMeta = {
 };
 
 export default async function DashboardPage() {
-  const [summary, reports, clients, cards] = await Promise.all([
+  const [summary, reports, clients, cards, successMetrics] = await Promise.all([
     getDashboardSummary(),
     getReports(),
     getClients(),
     getSprintCards(),
+    getSuccessMetrics(),
   ]);
 
   const supabase = await createClient();
@@ -492,6 +517,84 @@ export default async function DashboardPage() {
           </div>
         </section>
       </div>
+
+      {/* Métricas de sucesso (MVP) */}
+      <section
+        aria-labelledby="metricas-sucesso"
+        className="mt-6 rounded-2xl border border-line bg-surface p-5"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-3">
+          <div>
+            <h2
+              id="metricas-sucesso"
+              className="flex items-center gap-2 text-[14.5px] font-semibold text-ink"
+            >
+              <Sparkles className="h-4 w-4 text-teal" aria-hidden="true" />
+              Métricas de sucesso (MVP)
+            </h2>
+            <p className="text-[11.5px] text-muted-soft">
+              Indicadores de eficiência, adoção e precisão da IA medidos no teste real
+            </p>
+          </div>
+          <Badge tone="teal" dot>
+            Painel MVP
+          </Badge>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="rounded-xl border border-line/70 bg-paper/50 p-3">
+            <p className="text-[10.5px] font-medium uppercase text-muted">Duração Onboarding</p>
+            <p className="font-display mt-1 text-xl text-ink">
+              {formatDuration(successMetrics?.onboardingDurationSeconds)}
+            </p>
+            <p className="text-[10px] text-muted-soft">Meta PRD: &lt; 5 min</p>
+          </div>
+
+          <div className="rounded-xl border border-line/70 bg-paper/50 p-3">
+            <p className="text-[10.5px] font-medium uppercase text-muted">Média de Edições</p>
+            <p className="font-display mt-1 text-xl text-ink">
+              {successMetrics?.avgEditCount ?? 0}
+            </p>
+            <p className="text-[10px] text-muted-soft">Linhas por rascunho</p>
+          </div>
+
+          <div className="rounded-xl border border-line/70 bg-paper/50 p-3">
+            <p className="text-[10.5px] font-medium uppercase text-muted">Aprovados &lt; 3 Edições</p>
+            <p className="font-display mt-1 text-xl text-ink">
+              {successMetrics?.pctApprovedUnder3Edits ?? 0}%
+            </p>
+            <p className="text-[10px] text-muted-soft">Meta PRD: &ge; 80%</p>
+          </div>
+
+          <div className="rounded-xl border border-line/70 bg-paper/50 p-3">
+            <p className="text-[10.5px] font-medium uppercase text-muted">Tempo p/ Aprovação</p>
+            <p className="font-display mt-1 text-xl text-ink">
+              {formatDuration(successMetrics?.avgTimeToApproveSeconds)}
+            </p>
+            <p className="text-[10px] text-muted-soft">Meta PRD: &lt; 2 min</p>
+          </div>
+
+          <div className="rounded-xl border border-line/70 bg-paper/50 p-3">
+            <p className="text-[10.5px] font-medium uppercase text-muted">Abertura em 24h</p>
+            <p className="font-display mt-1 text-xl text-ink">
+              {successMetrics?.pctOpened24h ?? 0}%
+            </p>
+            <p className="text-[10px] text-muted-soft">Pixel indicativo (MPP)</p>
+          </div>
+
+          <div className="rounded-xl border border-line/70 bg-paper/50 p-3">
+            <p className="text-[10.5px] font-medium uppercase text-muted">Gerados sem IA</p>
+            <p className="font-display mt-1 text-xl text-ink">
+              {successMetrics?.pctGeneratedWithoutAi ?? 0}%
+            </p>
+            <p className="text-[10px] text-muted-soft">Modo contingência</p>
+          </div>
+        </div>
+
+        <p className="mt-3 text-right text-[11px] italic text-muted-soft">
+          * valores indicativos, medidos no teste real
+        </p>
+      </section>
 
       {/* Sent reports */}
       <section aria-labelledby="enviados" className="mt-6 rounded-2xl border border-line bg-surface">
