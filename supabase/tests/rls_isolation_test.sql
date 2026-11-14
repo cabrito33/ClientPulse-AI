@@ -119,6 +119,17 @@ BEGIN
     VALUES (v_client_a, v_agency_a, v_portal_token_a, true)
     ON CONFLICT (token) DO NOTHING;
 
+    -- Inserir integração GitHub com token cifrado para a Agência A (para teste de acesso a colunas)
+    INSERT INTO public.github_integrations (
+        agency_id, pat_token, pat_token_encrypted, github_username, is_valid
+    )
+    VALUES (
+        v_agency_a, NULL, 'cifrado_teste_secreto_pat', 'octocat-agencia-a', true
+    )
+    ON CONFLICT (agency_id) DO UPDATE SET
+        github_username = EXCLUDED.github_username,
+        pat_token_encrypted = EXCLUDED.pat_token_encrypted;
+
     RAISE NOTICE '[SETUP] Dados criados com sucesso.';
     RAISE NOTICE '  Agência A: % (user: %)', v_agency_a, v_user_a;
     RAISE NOTICE '  Agência B: % (user: %)', v_agency_b, v_user_b;
@@ -303,6 +314,49 @@ BEGIN
         END IF;
     EXCEPTION WHEN OTHERS THEN
         RAISE NOTICE '  ✅ PASS — SELECT directo rejeitado pela base de dados: %', SQLERRM;
+    END;
+
+    -- =========================================================================
+    -- TESTE 11: Role authenticated NÃO consegue ler pat_token_encrypted (BE-05 / 010)
+    -- =========================================================================
+    RAISE NOTICE '';
+    RAISE NOTICE '[TESTE 11] Role authenticated NÃO consegue ler pat_token_encrypted (permission denied)...';
+
+    SET LOCAL ROLE authenticated;
+    PERFORM set_config('request.jwt.claim.sub', v_user_a::text, true);
+
+    DECLARE
+        v_dummy_secret TEXT;
+    BEGIN
+        EXECUTE 'SELECT pat_token_encrypted FROM public.github_integrations WHERE agency_id = $1'
+        INTO v_dummy_secret
+        USING v_agency_a;
+
+        RAISE EXCEPTION '  ❌ SECURITY FAIL — authenticated role conseguiu ler pat_token_encrypted!';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE '  ✅ PASS — SELECT em pat_token_encrypted rejeitado com permission denied (insufficient_privilege)';
+    END;
+
+    -- =========================================================================
+    -- TESTE 12: Role authenticated continua a conseguir ler github_username e is_valid
+    -- =========================================================================
+    RAISE NOTICE '';
+    RAISE NOTICE '[TESTE 12] Role authenticated continua a conseguir ler github_username e is_valid...';
+
+    DECLARE
+        v_gh_username TEXT;
+        v_gh_valid BOOLEAN;
+    BEGIN
+        SELECT github_username, is_valid
+        INTO v_gh_username, v_gh_valid
+        FROM public.github_integrations
+        WHERE agency_id = v_agency_a;
+
+        IF v_gh_username = 'octocat-agencia-a' AND v_gh_valid = true THEN
+            RAISE NOTICE '  ✅ PASS — authenticated role leu github_username (%) e is_valid (%) com sucesso', v_gh_username, v_gh_valid;
+        ELSE
+            RAISE EXCEPTION '  ❌ FAIL — Dados de github_username/is_valid não correspondem ao esperado!';
+        END IF;
     END;
 
     -- =========================================================================

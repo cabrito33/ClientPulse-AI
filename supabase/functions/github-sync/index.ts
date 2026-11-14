@@ -16,7 +16,7 @@
 // ==============================================================================
 
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
-import { createUserClient, getAuthenticatedUser } from '../_shared/supabaseClient.ts';
+import { createUserClient, createAdminClient, getAuthenticatedUser } from '../_shared/supabaseClient.ts';
 import {
   testGitHubToken,
   listProjects,
@@ -65,11 +65,28 @@ Deno.serve(async (req: Request) => {
     let token = pat_token?.trim();
 
     if (!token) {
-      const supabase = createUserClient(req);
-      const { data: integration, error: dbError } = await supabase
+      // Authenticated user's agency is retrieved using user-scoped client to enforce RLS
+      const userClient = createUserClient(req);
+      const { data: agency, error: agencyError } = await userClient
+        .from('agencies')
+        .select('id')
+        .eq('user_id', user.id)
+        .single();
+
+      if (agencyError || !agency) {
+        return new Response(JSON.stringify({ error: 'Agency not found for authenticated user.' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Security: Only read PAT columns with adminClient (service role) using agency.id
+      // verified by RLS from the agencies table. Never read PAT using an agency_id from the request body.
+      const adminClient = createAdminClient();
+      const { data: integration, error: dbError } = await adminClient
         .from('github_integrations')
         .select('pat_token, pat_token_encrypted')
-        .limit(1)
+        .eq('agency_id', agency.id)
         .maybeSingle();
 
       if (dbError || (!integration?.pat_token && !integration?.pat_token_encrypted)) {

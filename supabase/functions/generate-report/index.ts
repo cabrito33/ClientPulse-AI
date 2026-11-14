@@ -82,7 +82,10 @@ Deno.serve(async (req: Request) => {
     }
 
     // 5. Fetch Agency GitHub PAT Token (decrypting if stored encrypted)
-    const { data: integration, error: integrationError } = await supabase
+    // Security: Only read PAT columns with adminClient (service role) using client.agency_id
+    // verified by RLS in step 4. Never read PAT using an agency_id from the request body.
+    const adminClient = createAdminClient();
+    const { data: integration, error: integrationError } = await adminClient
       .from('github_integrations')
       .select('pat_token, pat_token_encrypted')
       .eq('agency_id', client.agency_id)
