@@ -6,12 +6,23 @@ import { Sparkles, Loader2, AlertCircle } from "lucide-react";
 import { generateReportAction } from "@/app/actions/reports";
 import { buttonClass } from "@/components/ui/button";
 
-export function GenerateReportButton({ clientId }: { clientId: string }) {
+export function GenerateReportButton({
+  clientId,
+  hasSentReportThisWeek = false,
+}: {
+  clientId: string;
+  hasSentReportThisWeek?: boolean;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
   function handleGenerate() {
+    if (hasSentReportThisWeek) {
+      const confirmed = window.confirm("Já enviaste um relatório desta semana. Gerar outro rascunho?");
+      if (!confirmed) return;
+    }
+
     setError(null);
     startTransition(async () => {
       const res = await generateReportAction(clientId);

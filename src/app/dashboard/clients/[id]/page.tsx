@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowUpRight, FileText } from "lucide-react";
-import { getClient, getReportsForClient, getSprintMetrics } from "@/lib/api";
+import { getClient, getReportsForClient, getSprintMetrics, isoWeekNumber } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { buttonClass } from "@/components/ui/button";
 import { CompletedBySprintChart } from "@/components/dashboard/charts";
@@ -33,6 +33,13 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
     getReportsForClient(client.id),
     getSprintMetrics(client.id),
   ]);
+
+  const currentIsoWeek = isoWeekNumber(new Date().toISOString().split("T")[0]);
+  const hasSentReportThisWeek = reports.some((r) => {
+    if (r.status !== "sent") return false;
+    const dateToCheck = r.periodEnd || r.periodStart || r.generatedAt;
+    return isoWeekNumber(dateToCheck) === currentIsoWeek;
+  });
 
   return (
     <main className="mx-auto max-w-[1180px] px-5 py-7 sm:px-8">
@@ -74,7 +81,7 @@ export default async function ClientDetailPage({ params }: ClientPageProps) {
             Abrir portal do cliente
           </Link>
           <RenewPortalLinkButton clientId={client.id} />
-          <GenerateReportButton clientId={client.id} />
+          <GenerateReportButton clientId={client.id} hasSentReportThisWeek={hasSentReportThisWeek} />
           {reports[0] && (
             <Link
               href={`/dashboard/reports/${reports[0].id}`}

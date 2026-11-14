@@ -68,13 +68,15 @@ Deno.serve(async (req: Request) => {
         summary_next_steps,
         original_summary,
         created_at,
+        review_opened_at,
         clients:client_id (
           id,
           name,
           email,
           company_name,
           language,
-          portal_token
+          portal_token,
+          github_project_title
         )
       `)
       .eq('id', report_id)
@@ -130,6 +132,7 @@ Deno.serve(async (req: Request) => {
         toEmail: client.email,
         clientName: client.name,
         companyName: client.company_name,
+        projectTitle: client.github_project_title || client.company_name || client.name,
         periodStart: report.period_start,
         periodEnd: report.period_end,
         summaryDone,
@@ -215,11 +218,14 @@ Deno.serve(async (req: Request) => {
       calculateLineDiffCount(origBlockers, summaryBlockers) +
       calculateLineDiffCount(origNext, summaryNextSteps);
 
-    const createdAtDate = report.created_at ? new Date(report.created_at) : now;
-    const timeToApproveSeconds = Math.max(
-      0,
-      Math.round((now.getTime() - createdAtDate.getTime()) / 1000)
-    );
+    let timeToApproveSeconds: number | null = null;
+    if (report.review_opened_at) {
+      const reviewOpenedDate = new Date(report.review_opened_at);
+      timeToApproveSeconds = Math.max(
+        0,
+        Math.round((now.getTime() - reviewOpenedDate.getTime()) / 1000)
+      );
+    }
 
     // 6. Update Report in Database
     const { error: updateError } = await supabase

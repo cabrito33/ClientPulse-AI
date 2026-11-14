@@ -157,6 +157,7 @@ export interface CompleteOnboardingInput {
   clientEmail: string;
   projectId: string;
   projectOwner: string;
+  projectTitle?: string;
   tone: "formal" | "executivo" | "descontraido";
   language: "pt" | "en";
   columnMapping: {
@@ -243,6 +244,7 @@ export async function completeOnboardingAction(
           communication_tone: dbTone,
           language: input.language,
           github_project_id: input.projectId,
+          github_project_title: input.projectTitle || input.clientName,
           github_project_owner: input.projectOwner || "default",
           column_mapping: {
             done: [input.columnMapping.done],
@@ -285,6 +287,7 @@ export async function completeOnboardingAction(
           communication_tone: dbTone,
           language: input.language,
           github_project_id: input.projectId,
+          github_project_title: input.projectTitle || input.clientName,
           github_project_owner: input.projectOwner || "default",
           github_project_type: "user",
           column_mapping: {

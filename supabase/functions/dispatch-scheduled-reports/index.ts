@@ -70,6 +70,7 @@ Deno.serve(async (req: Request) => {
         communication_tone,
         language,
         github_project_id,
+        github_project_title,
         column_mapping,
         auto_send_enabled,
         portal_token,
@@ -196,7 +197,7 @@ Deno.serve(async (req: Request) => {
               : '• Nenhuma tarefa concluída no período selecionado.',
             blockers: tasks.blocked.length > 0
               ? tasks.blocked.map((t) => `• ${t.title}${t.assignee ? ` (${t.assignee})` : ''}`).join('\n')
-              : '• Nenhum impedimento ativo esta semana. Todas as atividades seguem o planeamento previsto.',
+              : '• Sem bloqueios registados no board.',
             next_steps: tasks.inProgress.length > 0
               ? tasks.inProgress.map((t) => `• ${t.title}${t.assignee ? ` (${t.assignee})` : ''}`).join('\n')
               : '• Planeamento e definição das próximas atividades em curso.',
@@ -245,6 +246,7 @@ Deno.serve(async (req: Request) => {
               toEmail: client.email,
               clientName: client.name,
               companyName: client.company_name,
+              projectTitle: client.github_project_title || client.company_name || client.name,
               periodStart: periodStartStr,
               periodEnd: periodEndStr,
               summaryDone: reportBlocks.done,

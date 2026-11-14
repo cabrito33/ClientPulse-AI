@@ -140,8 +140,9 @@ function mapClient(row: ClientRow): Client {
     // DB doesn't have a client status column; default to "active".
     status: "active",
     portalToken: row.portal_token,
-    // projectName: combine owner/project — displayed in portal header.
-    projectName: `${row.github_project_owner}/${row.github_project_id}`,
+    // projectName: use project title or company name. Never expose PVT_ or owner to end client.
+    projectName: row.github_project_title || row.company_name || row.name,
+    githubProjectTitle: row.github_project_title,
     avatarInitials: initials,
     startedAt: row.created_at.slice(0, 10),
     githubProjectId: row.github_project_id,
@@ -220,6 +221,7 @@ function mapReport(row: ReportRow, customErrorMessage?: string | null): Report {
     generatedAt: row.created_at,
     sentAt: row.sent_at ?? null,
     openedAt: row.opened_at ?? null,
+    reviewOpenedAt: row.review_opened_at ?? null,
     errorMessage,
     generatedWithoutAi,
     unmappedColumns: Array.isArray(rawObj?.unmapped_columns)
@@ -324,7 +326,7 @@ function buildWeekLabel(start: string, end: string): string {
 }
 
 /** Returns the ISO week number (1-53) for a YYYY-MM-DD string. */
-function isoWeekNumber(dateStr: string): number {
+export function isoWeekNumber(dateStr: string): number {
   const d = new Date(dateStr + (dateStr.includes("T") ? "" : "T12:00:00Z"));
   const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   const dayNr = (target.getUTCDay() + 6) % 7;
@@ -461,6 +463,24 @@ export async function getReport(id: string): Promise<Report | null> {
   }
 
   return mapReport(row, errorMessage);
+}
+
+/**
+ * Records the timestamp when the agency first opens the review screen for a report.
+ * Only updates if review_opened_at is currently NULL.
+ */
+export async function markReportReviewOpened(reportId: string): Promise<void> {
+  if (!isUUID(reportId)) return;
+  try {
+    const supabase = await createClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase.from("reports") as any)
+      .update({ review_opened_at: new Date().toISOString() })
+      .eq("id", reportId)
+      .is("review_opened_at", null);
+  } catch (err) {
+    console.warn(`[api] markReportReviewOpened(${reportId}):`, err);
+  }
 }
 
 export async function getReportsForClient(clientId: string): Promise<Report[]> {

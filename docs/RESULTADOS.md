@@ -41,6 +41,7 @@ SELECT
     week_label,
     status,
     edit_count,
+    review_opened_at,
     time_to_approve_seconds,
     created_at,
     approved_at,
@@ -77,7 +78,7 @@ Registo comparativo entre os objetivos quantitativos definidos no **PRD v2.0** e
 | **Tempo de Onboarding** | < 5 minutos (< 300 s) | `[ ]` segundos | `[ ]` | Medido entre `onboarding_started_at` e `onboarding_completed_at`. |
 | **Eficácia do Bot de Onboarding** | >= 85% de conclusão na 1.ª sessão | `[ ]` % | `[ ]` | Utilizadores que completaram o setup através do assistente conversacional. |
 | **Tempo de Preparação Semanal** | < 10 min por cliente/semana | `[ ]` minutos | `[ ]` | Tempo total incluindo geração, revisão e aprovação. |
-| **Tempo até à Aprovação (Revisão)** | < 2 minutos (< 120 s) | `[ ]` segundos | `[ ]` | Média de `time_to_approve_seconds` nos relatórios aprovados. |
+| **Tempo ativo de revisão** | < 2 minutos (< 120 s) | `[ ]` segundos | `[ ]` | Média de `time_to_approve_seconds` nos relatórios aprovados (calculado desde `review_opened_at` até `approved_at`, ignorando tempo parado). |
 | **Média de Edições por Rascunho** | < 3 linhas por rascunho | `[ ]` linhas | `[ ]` | Campo `avg_edit_count` na vista `success_metrics`. |
 | **Rascunhos com < 3 Edições** | >= 80% dos relatórios | `[ ]` % | `[ ]` | Campo `pct_approved_under_3_edits`. |
 | **Precisão da IA (Medição Manual)** | >= 80% das tarefas refletidas | `[ ]` % | `[ ]` | Tarefas do quadro representadas fielmente sem alucinações. |
@@ -98,7 +99,7 @@ Registo comparativo entre os objetivos quantitativos definidos no **PRD v2.0** e
 | Parâmetro de Medição | Valor Medido | Observações |
 | :--- | :--- | :--- |
 | Duração do Onboarding (`onboarding_duration_seconds`) | `[ ]` segundos | Tempo desde o ecrã inicial até à criação do 1.º cliente. |
-| Tempo de Revisão Humana (`time_to_approve_seconds`) | `[ ]` segundos | Intervalo entre a criação do rascunho e o clique de aprovação. |
+| Tempo de Revisão Humana Ativa (`time_to_approve_seconds`) | `[ ]` segundos | Intervalo entre a abertura do ecrã de revisão (`review_opened_at`) e a aprovação (`approved_at`). |
 | Contagem de Edições Efetuadas (`edit_count`) | `[ ]` alterações | Linhas alteradas, acrescentadas ou removidas face ao original. |
 | Estado Final do Relatório | `[ ]` | `sent` |
 | URL Canónico do Portal no E-mail | `[ ]` | Confirmado formato `/portal/[token]` (nunca `?token=`). |

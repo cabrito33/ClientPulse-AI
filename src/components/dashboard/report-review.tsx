@@ -25,6 +25,7 @@ import {
   approveAndSendAction,
   resendReportAction,
   toggleAutoSendAction,
+  trackReportReviewOpenedAction,
 } from "@/app/actions/reports";
 
 /** Parses edited markdown, falling back to the stored sections. */
@@ -59,6 +60,13 @@ export function ReportReview({
   const [toast, setToast] = useState<{ title: string; subtitle: string } | null>(null);
   const [error, setError] = useState<string | null>(report.errorMessage ?? null);
   const [isPending, startTransition] = useTransition();
+
+  // Record review_opened_at on mount if not yet set
+  useEffect(() => {
+    if (!report.reviewOpenedAt) {
+      trackReportReviewOpenedAction(report.id);
+    }
+  }, [report.id, report.reviewOpenedAt]);
 
   const parsed = useMemo<ReportSection>(() => {
     const raw = parseBodyFallback(body, report.sections);

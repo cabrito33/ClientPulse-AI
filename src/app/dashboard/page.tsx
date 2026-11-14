@@ -567,7 +567,7 @@ export default async function DashboardPage() {
           </div>
 
           <div className="rounded-xl border border-line/70 bg-paper/50 p-3">
-            <p className="text-[10.5px] font-medium uppercase text-muted">Tempo p/ Aprovação</p>
+            <p className="text-[10.5px] font-medium uppercase text-muted">Tempo ativo de revisão</p>
             <p className="font-display mt-1 text-xl text-ink">
               {formatDuration(successMetrics?.avgTimeToApproveSeconds)}
             </p>

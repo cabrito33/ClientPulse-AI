@@ -17,6 +17,7 @@ export interface SendReportEmailOptions {
   toEmail: string;
   clientName: string;
   companyName?: string | null;
+  projectTitle?: string | null;
   periodStart: string;
   periodEnd: string;
   summaryDone: string;
@@ -38,11 +39,14 @@ export function buildReportEmailHtml(options: SendReportEmailOptions): string {
   const trackingPixelUrl = `${baseUrl}/api/track/open?${
     options.reportId ? `reportId=${options.reportId}` : `token=${options.portalToken}`
   }`;
+  const displayProject = options.projectTitle || options.companyName || options.clientName;
 
   const labels = isPt
     ? {
         title: 'Relatório Semanal de Progresso',
-        subtitle: `Período: ${options.periodStart} a ${options.periodEnd}`,
+        subtitle: options.projectTitle
+          ? `Projeto: ${options.projectTitle} • Período: ${options.periodStart} a ${options.periodEnd}`
+          : `Período: ${options.periodStart} a ${options.periodEnd}`,
         doneTitle: '✅ O que foi concluído',
         blockersTitle: '⚠️ Pontos de Atenção & Bloqueios',
         nextStepsTitle: '🚀 Próximos Passos & Decisões',
@@ -51,7 +55,9 @@ export function buildReportEmailHtml(options: SendReportEmailOptions): string {
       }
     : {
         title: 'Weekly Progress Report',
-        subtitle: `Period: ${options.periodStart} to ${options.periodEnd}`,
+        subtitle: options.projectTitle
+          ? `Project: ${options.projectTitle} • Period: ${options.periodStart} to ${options.periodEnd}`
+          : `Period: ${options.periodStart} to ${options.periodEnd}`,
         doneTitle: '✅ Completed Deliverables',
         blockersTitle: '⚠️ Attention Points & Blockers',
         nextStepsTitle: '🚀 Next Steps & Priorities',
@@ -96,7 +102,7 @@ export function buildReportEmailHtml(options: SendReportEmailOptions): string {
             <td style="padding: 28px 32px 16px 32px;">
               <h2 style="margin: 0; font-size: 18px; color: #111827;">Olá, ${options.clientName}!</h2>
               <p style="margin: 8px 0 0 0; font-size: 14px; color: #4b5563; line-height: 1.5;">
-                ${isPt ? 'Aqui está o resumo executivo dos desenvolvimentos realizados pela nossa equipa esta semana.' : 'Here is the executive summary of the deliverables completed by our team this week.'}
+                ${isPt ? `Aqui está o resumo executivo dos desenvolvimentos realizados para o projeto <strong>${displayProject}</strong> esta semana.` : `Here is the executive summary of the deliverables completed for project <strong>${displayProject}</strong> this week.`}
               </p>
             </td>
           </tr>

@@ -136,6 +136,7 @@ export interface Database {
           communication_tone: string;
           language: "pt" | "en";
           github_project_id: string;
+          github_project_title: string | null;
           github_project_owner: string;
           github_project_type: "user" | "organization";
           column_mapping: Json;
@@ -155,6 +156,7 @@ export interface Database {
           communication_tone?: string;
           language?: "pt" | "en";
           github_project_id: string;
+          github_project_title: string | null;
           github_project_owner: string;
           github_project_type?: "user" | "organization";
           column_mapping?: Json;
@@ -174,6 +176,7 @@ export interface Database {
           communication_tone?: string;
           language?: "pt" | "en";
           github_project_id?: string;
+          github_project_title?: string | null;
           github_project_owner?: string;
           github_project_type?: "user" | "organization";
           column_mapping?: Json;
@@ -207,6 +210,7 @@ export interface Database {
           summary_next_steps: string;
           raw_github_data: Json | null;
           approved_at: string | null;
+          review_opened_at: string | null;
           sent_at: string | null;
           opened_at: string | null;
           email_delivery_id: string | null;
@@ -225,6 +229,7 @@ export interface Database {
           summary_next_steps: string;
           raw_github_data?: Json | null;
           approved_at?: string | null;
+          review_opened_at?: string | null;
           sent_at?: string | null;
           opened_at?: string | null;
           email_delivery_id?: string | null;
@@ -243,6 +248,7 @@ export interface Database {
           summary_next_steps?: string;
           raw_github_data?: Json | null;
           approved_at?: string | null;
+          review_opened_at?: string | null;
           sent_at?: string | null;
           opened_at?: string | null;
           email_delivery_id?: string | null;

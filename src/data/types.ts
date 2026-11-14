@@ -25,6 +25,7 @@ export interface Client {
   status: "active" | "paused" | "onboarding";
   portalToken: string;
   projectName: string;
+  githubProjectTitle?: string | null;
   avatarInitials: string;
   startedAt: string;
   githubProjectId?: string;
@@ -58,6 +59,7 @@ export interface Report {
   generatedAt: string;
   sentAt: string | null;
   openedAt: string | null;
+  reviewOpenedAt?: string | null;
   authorNote?: string;
   errorMessage?: string | null;
   generatedWithoutAi?: boolean;

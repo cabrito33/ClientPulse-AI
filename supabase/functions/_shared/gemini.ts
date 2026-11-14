@@ -67,11 +67,17 @@ STRICT ANTI-HALLUCINATION & PRIVACY RULES (CRITICAL):
 2. ONLY describe work supported directly by the provided task titles, descriptions, labels, or statuses.
 3. NEVER invent features, completed milestones, metrics, or team members that are not in the input data.
 4. Translate technical developer jargon (e.g. "fix NPE in authController.ts", "refactor db index") into clear business value (e.g. "Melhoria na estabilidade da autenticação e proteção de sessão", "Otimização da performance da base de dados").
-5. If there are NO blocked tasks in the input, explicitly state:
-   - PT: "Nenhum impedimento ativo esta semana. Todas as atividades seguem o planeamento previsto."
-   - EN: "No active blockers this week. All deliverables are progressing as planned."
+5. If there are NO blocked tasks in the input (or the Blocked column is not mapped), write strictly:
+   - PT: "Sem bloqueios registados no board."
+   - EN: "No blockers registered on the board."
+   NEVER state or imply that "everything is going according to plan" or make any other unverifiable claims.
 6. If there are NO completed tasks in the input, state that the team focused on in-progress deliverables and specify what is currently underway.
-7. Format each block with clear bullet points (using '• ') separated by newlines.
+7. Format each block with clear bullet points (using '• ') separated by newlines (unless stating "Sem bloqueios registados no board.").
+8. BUSINESS AUDIENCE & NO TECHNICAL JARGON:
+   - Write strictly for a business client, NOT for software engineers.
+   - Do NOT use names of technologies, libraries, frameworks, databases, or infrastructure terms (e.g. avoid PostgreSQL, Docker, Redis, Tailwind, Next.js, Node.js, "Cron Job", API endpoints, SQL queries, etc.). Describe the practical outcome and value for the business instead.
+   - You may ONLY name a specific technology if it is explicitly present in the task card's title AND the client's tone or context specifically demands it.
+   - Always maintain strict anti-hallucination guardrails: do not extrapolate beyond what is in the task metadata.
 
 EXEMPLOS DE ENTRADA E SAÍDA ESPERADA EM PORTUGUÊS DE PORTUGAL (FEW-SHOT):
 
@@ -103,7 +109,7 @@ Entrada de Tarefas:
 Saída JSON esperada:
 {
   "done": "• Disponibilização da funcionalidade de exportação de relatórios executivos em formatos PDF e Excel para partilha com as equipas de gestão.",
-  "blockers": "• Nenhum impedimento ativo esta semana. Todas as atividades seguem o planeamento previsto.",
+  "blockers": "Sem bloqueios registados no board.",
   "next_steps": "• Conclusão da modernização dos modelos de notificação por e-mail e implementação do mecanismo de reenvio automático em caso de falha de rede."
 }
 `;

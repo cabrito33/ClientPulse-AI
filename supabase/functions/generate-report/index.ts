@@ -70,7 +70,7 @@ Deno.serve(async (req: Request) => {
     // 4. Fetch Client Settings
     const { data: client, error: clientError } = await supabase
       .from('clients')
-      .select('id, agency_id, name, email, company_name, communication_tone, language, github_project_id, column_mapping, auto_send_enabled, portal_token')
+      .select('id, agency_id, name, email, company_name, communication_tone, language, github_project_id, github_project_title, column_mapping, auto_send_enabled, portal_token')
       .eq('id', client_id)
       .single();
 
@@ -154,7 +154,7 @@ Deno.serve(async (req: Request) => {
 
       const blockerLines = tasks.blocked.length > 0
         ? tasks.blocked.map((t) => `• ${t.title}${t.assignee ? ` (${t.assignee})` : ''}`).join('\n')
-        : '• Nenhum impedimento ativo esta semana. Todas as atividades seguem o planeamento previsto.';
+        : '• Sem bloqueios registados no board.';
 
       const nextLines = tasks.inProgress.length > 0
         ? tasks.inProgress.map((t) => `• ${t.title}${t.assignee ? ` (${t.assignee})` : ''}`).join('\n')
@@ -211,6 +211,7 @@ Deno.serve(async (req: Request) => {
           toEmail: client.email,
           clientName: client.name,
           companyName: client.company_name,
+          projectTitle: client.github_project_title || client.company_name || client.name,
           periodStart: periodStartStr,
           periodEnd: periodEndStr,
           summaryDone: reportBlocks.done,

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2, ShieldCheck, ArrowLeft, Clock, FileText, ShieldAlert } from "lucide-react";
 import { getPortalData, getPortalTokenStatus } from "@/lib/api";
+import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { Logo } from "@/components/ui/logo";
 import { CompletedBySprintChart } from "@/components/dashboard/charts";
@@ -28,7 +29,12 @@ export async function generateMetadata({ params }: PortalPageProps) {
 
 export default async function PortalPage({ params }: PortalPageProps) {
   const { token } = await params;
-  const data = await getPortalData(token);
+  const [data, authClient] = await Promise.all([
+    getPortalData(token),
+    createClient(),
+  ]);
+
+  const { data: { user } } = await authClient.auth.getUser();
 
   if (!data) {
     const tokenStatus = await getPortalTokenStatus(token);
@@ -104,16 +110,24 @@ export default async function PortalPage({ params }: PortalPageProps) {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <Badge tone="teal" dot>
-              Acesso seguro (sem login)
-            </Badge>
-            <Link
-              href="/dashboard"
-              className="hidden text-xs text-muted hover:text-ink sm:inline-flex sm:items-center sm:gap-1"
-            >
-              <ArrowLeft className="h-3 w-3" />
-              Ver dashboard
-            </Link>
+            {user ? (
+              <div className="flex items-center gap-2 rounded-lg border border-line bg-sand/50 px-2.5 py-1 text-xs text-ink-soft">
+                <span className="h-1.5 w-1.5 rounded-full bg-gold" />
+                <span className="font-medium">Pré-visualização</span>
+                <span className="text-muted-soft">·</span>
+                <Link
+                  href="/dashboard"
+                  className="inline-flex items-center gap-1 text-muted hover:text-ink hover:underline"
+                >
+                  <ArrowLeft className="h-3 w-3" />
+                  Voltar ao dashboard
+                </Link>
+              </div>
+            ) : (
+              <Badge tone="teal" dot>
+                Acesso seguro (sem login)
+              </Badge>
+            )}
           </div>
         </div>
       </header>
@@ -276,7 +290,9 @@ export default async function PortalPage({ params }: PortalPageProps) {
                       Histórico recente de entregas no GitHub Projects
                     </p>
                   </div>
-                  <Badge tone="neutral">Últimos {metrics.length} ciclos</Badge>
+                  <Badge tone="neutral">
+                    {metrics.length === 1 ? "Último ciclo" : `Últimos ${metrics.length} ciclos`}
+                  </Badge>
                 </div>
                 <div className="mt-6">
                   <CompletedBySprintChart data={metrics} height={200} />

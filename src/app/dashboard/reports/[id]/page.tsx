@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getClient, getReport, getSprintMetrics } from "@/lib/api";
+import { getClient, getReport, getSprintMetrics, markReportReviewOpened } from "@/lib/api";
 import { ReportReview } from "@/components/dashboard/report-review";
 
 interface ReportPageProps {
@@ -19,6 +19,11 @@ export default async function ReportPage({ params }: ReportPageProps) {
   const { id } = await params;
   const report = await getReport(id);
   if (!report) notFound();
+
+  // Record review_opened_at on first view of review screen (for active review time)
+  if (!report.reviewOpenedAt) {
+    await markReportReviewOpened(id);
+  }
 
   const client = await getClient(report.clientId);
   if (!client) notFound();

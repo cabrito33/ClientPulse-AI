@@ -257,6 +257,7 @@ export default function OnboardingPage() {
         clientEmail: clientData.email,
         projectId: selectedProject.id,
         projectOwner: githubUsername || "default",
+        projectTitle: selectedProject.title,
         tone: clientData.tone as "formal" | "executivo" | "descontraido",
         language: clientData.language as "pt" | "en",
         columnMapping: columnMap,

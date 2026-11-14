@@ -8,6 +8,7 @@ import {
   updateClientColumnMapping,
   updateClientAutoSend,
   renewClientPortalToken,
+  markReportReviewOpened,
 } from "@/lib/api";
 
 /**
@@ -118,4 +119,12 @@ export async function renewPortalTokenAction(clientId: string) {
       err instanceof Error ? err.message : "Erro ao renovar link do portal";
     return { success: false as const, error: message };
   }
+}
+
+/**
+ * Server Action to record the timestamp when the agency opens the report review screen.
+ * Only writes to review_opened_at if it is currently NULL.
+ */
+export async function trackReportReviewOpenedAction(reportId: string): Promise<void> {
+  await markReportReviewOpened(reportId);
 }
