@@ -76,6 +76,11 @@ Para assegurar a confidencialidade e integridade dos dados durante todo o seu ci
    * Antes de disparar qualquer pedido ao endpoint GraphQL do GitHub, a função `validateGraphQLQuery` analisa estruturalmente a query contra uma allowlist estrita de campos de ProjectV2 (`ALLOWED_GRAPHQL_FIELDS`).
    * Qualquer tentativa de aceder a ficheiros, blobs, árvores git (`tree`), commits ou repositórios é bloqueada imediatamente em memória com `SecurityError`, impedindo a saída de qualquer pacote HTTP para a infraestrutura do GitHub.
    * Suíte automatizada de testes de segurança em runtime disponível em `scripts/test-runtime-security.mjs` (`npm test`).
+6. **Reconhecimento de Voz no Onboarding (FE-10):**
+   * O assistente PulseBot disponibiliza entrada por voz opcional através da Web Speech API do browser (`SpeechRecognition` / `webkitSpeechRecognition`, pt-PT).
+   * O áudio do utilizador **não é gravado, guardado nem transmitido** pela aplicação ClientPulse AI.
+   * Em determinados navegadores (como Google Chrome ou Apple Safari), o reconhecimento de voz é realizado pelo serviço do próprio fornecedor do browser, sujeito à sua respetiva política de privacidade. O texto transcrito é colocado na caixa de texto local para revisão do utilizador e nunca é enviado automaticamente.
+   * A interface adverte explicitamente: *"Não digas o teu token em voz alta: cola-o no campo"*.
 
 ---
 

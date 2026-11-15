@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   Bot,
@@ -84,6 +84,103 @@ export default function OnboardingPage() {
   const [chatError, setChatError] = useState<string | null>(null);
   const [githubConnected, setGithubConnected] = useState(false);
   const [githubUsername, setGithubUsername] = useState<string | null>(null);
+
+  // Speech Recognition state (FE-10)
+  const [isSpeechSupported, setIsSpeechSupported] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        setIsSpeechSupported(true);
+      }
+    }
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, []);
+
+  function toggleVoiceInput() {
+    if (!isSpeechSupported) return;
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+      setIsListening(false);
+      return;
+    }
+
+    setSpeechError(null);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        setIsSpeechSupported(false);
+        return;
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = "pt-PT";
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognitionRef.current = recognition;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      recognition.onresult = (event: any) => {
+        let transcript = "";
+        for (let i = 0; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript) {
+          // O texto ditado vai para a caixa de texto para o utilizador rever; NUNCA é enviado automaticamente
+          setChatInput((prev) => {
+            const prefix = prev.trim() ? `${prev.trim()} ` : "";
+            return `${prefix}${transcript.trim()}`;
+          });
+        }
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      recognition.onerror = (event: any) => {
+        setIsListening(false);
+        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+          setSpeechError("Permissão de microfone negada. Ativa o microfone nas definições do browser.");
+        } else if (event.error === "no-speech") {
+          // Apenas silêncio
+        } else {
+          setSpeechError(`Erro no reconhecimento de voz (${event.error}). Tenta novamente.`);
+        }
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.start();
+      setIsListening(true);
+    } catch (err: unknown) {
+      setIsListening(false);
+      setSpeechError(
+        err instanceof Error ? err.message : "Não foi possível aceder ao microfone."
+      );
+    }
+  }
 
   const handleSelectProject = useCallback(async (proj: OnboardingProject) => {
     setSelectedProject(proj);
@@ -349,12 +446,26 @@ export default function OnboardingPage() {
                 </div>
                 <button
                   type="button"
-                  disabled
-                  title="Modo de voz planeado para a próxima versão"
-                  className="inline-flex items-center gap-1.5 rounded-full border border-line bg-sand/40 px-2.5 py-1 text-xs font-medium text-muted cursor-not-allowed opacity-75"
+                  onClick={toggleVoiceInput}
+                  disabled={!isSpeechSupported}
+                  title={
+                    !isSpeechSupported
+                      ? "Voz não disponível neste browser"
+                      : isListening
+                      ? "A ouvir... Clica para parar"
+                      : "Ativar ditado por voz (pt-PT)"
+                  }
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                    !isSpeechSupported && "border-line bg-sand/40 text-muted cursor-not-allowed opacity-75",
+                    isSpeechSupported && !isListening && "border-line bg-paper text-ink-soft hover:bg-surface hover:text-ink cursor-pointer",
+                    isSpeechSupported && isListening && "border-accent bg-accent-soft text-accent animate-pulse cursor-pointer"
+                  )}
                 >
-                  <Mic className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span className="hidden sm:inline">Voz: planeado</span>
+                  <Mic className={cn("h-3.5 w-3.5", isListening && "text-accent animate-bounce")} aria-hidden="true" />
+                  <span className="hidden sm:inline">
+                    {!isSpeechSupported ? "Voz: indisponível" : isListening ? "a ouvir…" : "Voz"}
+                  </span>
                 </button>
               </div>
               <p className="mt-1.5 text-sm leading-relaxed text-muted">
@@ -432,6 +543,14 @@ export default function OnboardingPage() {
                 {chatError}
               </p>
             )}
+            {speechError && (
+              <p className="mt-1.5 text-[11.5px] text-accent font-medium">
+                {speechError}
+              </p>
+            )}
+            <p className="mt-1.5 text-[11px] text-muted-soft">
+              <span className="font-semibold text-muted">Aviso:</span> Não digas o teu token em voz alta: cola-o no campo.
+            </p>
             <p className="mt-2.5 flex items-center gap-1.5 text-[11px] text-muted-soft">
               <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" />
               <span>
