@@ -37,6 +37,7 @@ function GithubMark({ className }: { className?: string }) {
 import { Badge } from "@/components/ui/badge";
 import { buttonClass } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
+import { processVoiceTranscript } from "@/lib/speech";
 import { cn } from "@/lib/utils";
 
 type Step = 1 | 2 | 3 | 4;
@@ -93,6 +94,7 @@ export default function OnboardingPage() {
   const [speechError, setSpeechError] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
+  const baseTextRef = useRef<string>("");
 
   useEffect(() => {
     let isMounted = true;
@@ -133,6 +135,7 @@ export default function OnboardingPage() {
         } catch {
           // ignore
         }
+        recognitionRef.current = null;
       }
     };
   }, []);
@@ -147,6 +150,7 @@ export default function OnboardingPage() {
         } catch {
           // ignore
         }
+        recognitionRef.current = null;
       }
       setIsListening(false);
       return;
@@ -161,30 +165,41 @@ export default function OnboardingPage() {
         return;
       }
 
+      // Garante que só existe uma instância de reconhecimento ativa
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch {
+          // ignore
+        }
+        recognitionRef.current = null;
+      }
+
+      // 1. Ao iniciar o reconhecimento, guarda o texto que já estava na caixa (baseText)
+      baseTextRef.current = chatInput;
+
       const recognition = new SpeechRecognition();
       recognition.lang = "pt-PT";
+      // 2. recognition.continuous = false (uma frase por clique) e interimResults = false
       recognition.continuous = false;
-      recognition.interimResults = true;
+      recognition.interimResults = false;
       recognitionRef.current = recognition;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       recognition.onresult = (event: any) => {
-        let transcript = "";
-        for (let i = 0; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        if (transcript) {
-          // O texto ditado vai para a caixa de texto para o utilizador rever; NUNCA é enviado automaticamente
-          setChatInput((prev) => {
-            const prefix = prev.trim() ? `${prev.trim()} ` : "";
-            return `${prefix}${transcript.trim()}`;
-          });
+        // 1. Em CADA onresult, reconstrói o texto ditado a partir de TODOS os resultados desde o índice 0,
+        // junta-os com um espaço, e define a caixa como baseText + (baseText ? " " : "") + texto ditado.
+        // SUBSTITUI sempre o conteúdo ditado, nunca o acrescentes ao anterior.
+        const updatedText = processVoiceTranscript(baseTextRef.current, event.results);
+        if (updatedText) {
+          setChatInput(updatedText);
         }
       };
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       recognition.onerror = (event: any) => {
         setIsListening(false);
+        recognitionRef.current = null;
         const errCode = event.error;
 
         // a) Mapeia cada código de erro do SpeechRecognition para uma mensagem em PT-PT:
@@ -211,13 +226,16 @@ export default function OnboardingPage() {
       };
 
       recognition.onend = () => {
+        // 4. Ao terminar (onend) pára o reconhecimento e limpa as referências internas; nunca reinicies sozinho.
         setIsListening(false);
+        recognitionRef.current = null;
       };
 
       recognition.start();
       setIsListening(true);
     } catch (err: unknown) {
       setIsListening(false);
+      recognitionRef.current = null;
       setSpeechError(
         err instanceof Error ? err.message : "Não foi possível aceder ao microfone."
       );
