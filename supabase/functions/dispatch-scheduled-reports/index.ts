@@ -328,9 +328,12 @@ Deno.serve(async (req: Request) => {
         });
       } catch (clientErr: unknown) {
         const errorMsg = clientErr instanceof Error ? clientErr.message : String(clientErr);
+        const isRateLimit = (clientErr as any)?.code === 'GITHUB_RATE_LIMITED' || (clientErr as any)?.name === 'GitHubRateLimitError';
+        console.warn(`[dispatch-scheduled-reports] Error processing client ${client.id} (rate_limited: ${isRateLimit}):`, errorMsg);
         results.errors.push({
           client_id: client.id,
           error: errorMsg,
+          rate_limited: isRateLimit ? true : undefined,
         });
       }
     }

@@ -59,6 +59,125 @@ export class SecurityError extends Error {
 }
 
 /**
+ * Error thrown when GitHub rate limit / secondary rate limit is exceeded (BE-08).
+ */
+export class GitHubRateLimitError extends Error {
+  code = 'GITHUB_RATE_LIMITED';
+  constructor(message = 'O GitHub limitou temporariamente os pedidos. Tenta de novo dentro de alguns minutos.') {
+    super(message);
+    this.name = 'GitHubRateLimitError';
+  }
+}
+
+export interface RateLimitDetection {
+  isRateLimited: boolean;
+  retryAfterSeconds?: number;
+  resetEpochSeconds?: number;
+  reason?: string;
+}
+
+/**
+ * Detects if a GitHub API response corresponds to primary or secondary rate limits (BE-08).
+ */
+export function detectGitHubRateLimit(
+  status: number,
+  headers: Headers | Record<string, string | null | undefined> | undefined,
+  bodyJson?: any
+): RateLimitDetection {
+  const getHeader = (name: string): string | null => {
+    if (!headers) return null;
+    if (typeof (headers as Headers).get === 'function') {
+      return (headers as Headers).get(name);
+    }
+    const lower = name.toLowerCase();
+    for (const [k, v] of Object.entries(headers)) {
+      if (k.toLowerCase() === lower) return v ?? null;
+    }
+    return null;
+  };
+
+  const remaining = getHeader('x-ratelimit-remaining');
+  const retryAfter = getHeader('retry-after');
+  const reset = getHeader('x-ratelimit-reset');
+
+  const retryAfterSec = retryAfter ? parseInt(retryAfter, 10) : undefined;
+  const resetSec = reset ? parseInt(reset, 10) : undefined;
+
+  // 1. Check GraphQL response body errors for RATE_LIMITED or secondary rate limit messages
+  if (bodyJson && Array.isArray(bodyJson.errors)) {
+    for (const err of bodyJson.errors) {
+      if (err.type === 'RATE_LIMITED') {
+        return {
+          isRateLimited: true,
+          retryAfterSeconds: retryAfterSec,
+          resetEpochSeconds: resetSec,
+          reason: 'graphql_rate_limited_type',
+        };
+      }
+      const msg = typeof err.message === 'string' ? err.message.toLowerCase() : '';
+      if (
+        msg.includes('rate limit') ||
+        msg.includes('secondary rate limit') ||
+        msg.includes('abuse detection')
+      ) {
+        return {
+          isRateLimited: true,
+          retryAfterSeconds: retryAfterSec,
+          resetEpochSeconds: resetSec,
+          reason: 'graphql_error_message',
+        };
+      }
+    }
+  }
+
+  // 2. HTTP 429 is always Too Many Requests
+  if (status === 429) {
+    return {
+      isRateLimited: true,
+      retryAfterSeconds: retryAfterSec,
+      resetEpochSeconds: resetSec,
+      reason: 'http_429',
+    };
+  }
+
+  // 3. HTTP 403 with x-ratelimit-remaining: 0, Retry-After, or secondary rate limit message
+  if (status === 403) {
+    if (remaining === '0' || (retryAfterSec !== undefined && !Number.isNaN(retryAfterSec))) {
+      return {
+        isRateLimited: true,
+        retryAfterSeconds: retryAfterSec,
+        resetEpochSeconds: resetSec,
+        reason: 'http_403_rate_limit_headers',
+      };
+    }
+
+    const bodyMsg = typeof bodyJson?.message === 'string' ? bodyJson.message.toLowerCase() : '';
+    if (
+      bodyMsg.includes('secondary rate limit') ||
+      bodyMsg.includes('rate limit') ||
+      bodyMsg.includes('abuse detection')
+    ) {
+      return {
+        isRateLimited: true,
+        retryAfterSeconds: retryAfterSec,
+        resetEpochSeconds: resetSec,
+        reason: 'http_403_rate_limit_body',
+      };
+    }
+  }
+
+  return { isRateLimited: false };
+}
+
+export interface GraphQLRequestOptions {
+  fetchFn?: typeof fetch;
+  sleepFn?: (ms: number) => Promise<void>;
+  maxRetries?: number;
+  maxTotalWaitMs?: number;
+  nowFn?: () => number;
+}
+
+/**
  * Set of allowed GraphQL selection fields and types for GitHub Projects v2 operations (BE-09).
  * Only fields relevant to Project boards, cards and metadata are permitted.
  * Source code, files, blobs, git trees and commits are strictly excluded.
@@ -218,36 +337,99 @@ export function validateGraphQLQuery(query: string): void {
 }
 
 /**
- * Executes a raw GraphQL query against the GitHub API.
+ * Executes a raw GraphQL query against the GitHub API with automatic rate-limit detection,
+ * Retry-After / reset handling, and exponential backoff retry (BE-08 / BE-09).
  */
-export async function executeGitHubGraphQL(pat: string, query: string, variables: Record<string, unknown> = {}) {
+export async function executeGitHubGraphQL(
+  pat: string,
+  query: string,
+  variables: Record<string, unknown> = {},
+  options?: GraphQLRequestOptions
+) {
   // Runtime Security Validation (Issue #23 / BE-09):
   // Strictly verifies that the query contains ONLY allowed ProjectV2 fields
   // and NEVER requests repository source code, file blobs, or git trees.
   validateGraphQLQuery(query);
 
-  const response = await fetch(GITHUB_GRAPHQL_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${pat.trim()}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'ClientPulse-AI/1.0',
-    },
-    body: JSON.stringify({ query, variables }),
-  });
+  const fetchFn = options?.fetchFn ?? fetch;
+  const sleepFn = options?.sleepFn ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const nowFn = options?.nowFn ?? Date.now;
+  const maxRetries = options?.maxRetries ?? 2;
+  const maxTotalWaitMs = options?.maxTotalWaitMs ?? 20000;
 
-  if (response.status === 401) {
-    throw new Error('Invalid GitHub Personal Access Token (401 Bad Credentials).');
+  let totalWaitMs = 0;
+  let attempt = 0;
+
+  while (true) {
+    const response = await fetchFn(GITHUB_GRAPHQL_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${pat.trim()}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'ClientPulse-AI/1.0',
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+
+    if (response.status === 401) {
+      throw new Error('Invalid GitHub Personal Access Token (401 Bad Credentials).');
+    }
+
+    let result: any = null;
+    let rawText = '';
+    try {
+      rawText = await response.text();
+      result = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      // not JSON
+    }
+
+    // Rate Limit Detection (BE-08)
+    const rateLimitInfo = detectGitHubRateLimit(response.status, response.headers, result);
+
+    if (rateLimitInfo.isRateLimited) {
+      if (attempt >= maxRetries) {
+        throw new GitHubRateLimitError();
+      }
+
+      // Calculate wait time respecting Retry-After or x-ratelimit-reset
+      let waitMs = 0;
+      if (rateLimitInfo.retryAfterSeconds !== undefined && rateLimitInfo.retryAfterSeconds > 0) {
+        waitMs = rateLimitInfo.retryAfterSeconds * 1000;
+      } else if (rateLimitInfo.resetEpochSeconds !== undefined && rateLimitInfo.resetEpochSeconds > 0) {
+        const nowSec = nowFn() / 1000;
+        const diffSec = rateLimitInfo.resetEpochSeconds - nowSec;
+        waitMs = Math.max(1000, Math.ceil(diffSec) * 1000);
+      } else {
+        // Backoff exponencial com jitter
+        const baseMs = 1000 * Math.pow(2, attempt);
+        const jitterMs = Math.floor(Math.random() * 500);
+        waitMs = baseMs + jitterMs;
+      }
+
+      // Teto de 20s no total
+      if (totalWaitMs + waitMs > maxTotalWaitMs) {
+        throw new GitHubRateLimitError();
+      }
+
+      await sleepFn(waitMs);
+      totalWaitMs += waitMs;
+      attempt++;
+      continue;
+    }
+
+    if (!response.ok) {
+      const errorMsg = result?.message || rawText || `HTTP ${response.status}`;
+      throw new Error(`GitHub API Error: ${errorMsg}`);
+    }
+
+    if (result?.errors && result.errors.length > 0) {
+      const errorMsg = result.errors.map((e: { message: string }) => e.message).join(' | ');
+      throw new Error(`GitHub GraphQL Error: ${errorMsg}`);
+    }
+
+    return result?.data;
   }
-
-  const result = await response.json();
-
-  if (result.errors && result.errors.length > 0) {
-    const errorMsg = result.errors.map((e: { message: string }) => e.message).join(' | ');
-    throw new Error(`GitHub GraphQL Error: ${errorMsg}`);
-  }
-
-  return result.data;
 }
 
 /**

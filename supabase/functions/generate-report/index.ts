@@ -17,7 +17,7 @@
 
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { createUserClient, createAdminClient, getAuthenticatedUser } from '../_shared/supabaseClient.ts';
-import { fetchBoardTasks } from '../_shared/github.ts';
+import { fetchBoardTasks, GitHubRateLimitError } from '../_shared/github.ts';
 import { generateExecutiveReport } from '../_shared/gemini.ts';
 import { decryptPat } from '../_shared/crypto.ts';
 import { sendReportEmail } from '../_shared/resend.ts';
@@ -398,10 +398,17 @@ Deno.serve(async (req: Request) => {
       { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (err: unknown) {
+    const isRateLimit = (err as any)?.code === 'GITHUB_RATE_LIMITED' || err instanceof GitHubRateLimitError;
     const message = err instanceof Error ? err.message : 'Internal Server Error';
-    return new Response(JSON.stringify({ error: message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        error: message,
+        code: isRateLimit ? 'GITHUB_RATE_LIMITED' : undefined,
+      }),
+      {
+        status: isRateLimit ? 429 : 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
   }
 });
