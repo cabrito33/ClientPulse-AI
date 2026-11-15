@@ -1,4 +1,7 @@
 -- ==============================================================================
+-- SÓ PARA DESENVOLVIMENTO LOCAL (supabase db reset).
+-- NUNCA correr em produção: cria clientes de demonstração na primeira conta.
+-- ==============================================================================
 -- ClientPulse AI — Complete Test Seed Data (Issue #15 BE-01)
 -- File: supabase/seed.sql
 --
@@ -32,6 +35,11 @@ DECLARE
     v_report_mira UUID;
     v_report_vitalis UUID;
 BEGIN
+    -- Bloqueio de segurança: se já existir qualquer linha em github_integrations, bloqueia o seed
+    IF EXISTS (SELECT 1 FROM public.github_integrations LIMIT 1) THEN
+        RAISE EXCEPTION 'Seed bloqueado: existem dados reais';
+    END IF;
+
     -- 1. Obtain user_id (first user or generate placeholder)
     SELECT id INTO v_user_id FROM auth.users ORDER BY created_at ASC LIMIT 1;
     
