@@ -103,12 +103,66 @@ export async function invokeEdgeFunction<T = unknown>(
 }
 
 /**
+ * Translates delivery/resend error messages into friendly Portuguese (PT-PT),
+ * without exposing raw sensitive data or vendor internals.
+ */
+export function translateDeliveryError(rawError: string | null | undefined): string {
+  if (!rawError || typeof rawError !== "string") {
+    return "O envio falhou. Tenta de novo e, se continuar, verifica o e-mail do cliente";
+  }
+
+  const lower = rawError.toLowerCase();
+
+  // 1. Recusa do Resend por remetente de teste sem domínio verificado
+  if (
+    lower.includes("only send testing emails") ||
+    lower.includes("verify your domain") ||
+    lower.includes("testing emails") ||
+    lower.includes("onboarding@resend.dev") ||
+    lower.includes("sandbox")
+  ) {
+    return "O Resend só permite enviar para o e-mail da tua conta até verificares um domínio";
+  }
+
+  // 2. E-mail do cliente inválido
+  if (
+    lower.includes("invalid email") ||
+    lower.includes("valid email address") ||
+    lower.includes("invalid recipient") ||
+    lower.includes("invalid_parameter") ||
+    lower.includes("not a valid email") ||
+    lower.includes("rfc")
+  ) {
+    return "O e-mail do cliente não é válido";
+  }
+
+  // 3. Outros erros genéricos
+  return "O envio falhou. Tenta de novo e, se continuar, verifica o e-mail do cliente";
+}
+
+/**
  * Translates common backend English error messages into friendly Portuguese (PT-PT).
  */
 function translateEdgeError(msg: string): string {
   if (!msg) return "Erro desconhecido ao processar o pedido.";
 
   const lower = msg.toLowerCase();
+
+  // Delivery errors (Resend) — process before general substring checks
+  if (
+    lower.includes("resend") ||
+    lower.includes("email") ||
+    lower.includes("falha no envio") ||
+    lower.includes("delivery")
+  ) {
+    return translateDeliveryError(msg);
+  }
+
+  // Rate limiting (BE-08)
+  if (lower.includes("github limitou temporariamente") || lower.includes("github_rate_limited")) {
+    return "O GitHub limitou temporariamente os pedidos. Tenta de novo dentro de alguns minutos.";
+  }
+
   if (lower.includes("unauthorized") || lower.includes("missing or invalid authentication")) {
     return "Não autorizado. Por favor, inicia sessão novamente.";
   }
@@ -124,11 +178,9 @@ function translateEdgeError(msg: string): string {
   if (lower.includes("rate limit")) {
     return "Limite de pedidos à API do GitHub atingido. Tenta novamente mais tarde.";
   }
-  if (lower.includes("gemini") || lower.includes("ai")) {
+  // Word boundary regex for AI/IA to avoid matching words containing 'ai' (e.g. domain, failed, wait)
+  if (lower.includes("gemini") || /\b(ai|ia)\b/i.test(lower)) {
     return "O assistente de inteligência artificial encontrou uma dificuldade temporária. O rascunho pode ser revisto manualmente.";
-  }
-  if (lower.includes("resend") || lower.includes("email")) {
-    return "Falha no serviço de entrega de e-mail (Resend). Verifica se o endereço do cliente é válido.";
   }
 
   return msg;

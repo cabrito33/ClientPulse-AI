@@ -12,7 +12,7 @@
  */
 
 import { createClient } from "@/lib/supabase/server";
-import { invokeEdgeFunction } from "@/lib/edge";
+import { invokeEdgeFunction, translateDeliveryError } from "@/lib/edge";
 import type { Tables } from "@/types/database.types";
 import type {
   Client,
@@ -234,19 +234,20 @@ function mapReport(row: ReportRow, customErrorMessage?: string | null): Report {
   };
 }
 
-/** Extracts an error message for failed reports from raw_github_data or defaults. */
+/** Extracts an error message for failed reports from raw_github_data or defaults, translated to PT-PT. */
 function extractErrorMessage(row: ReportRow): string {
+  let raw: string | null = null;
   if (
     row.raw_github_data &&
     typeof row.raw_github_data === "object" &&
     !Array.isArray(row.raw_github_data)
   ) {
-    const raw = row.raw_github_data as Record<string, unknown>;
-    if (typeof raw.error === "string") return raw.error;
-    if (typeof raw.error_message === "string") return raw.error_message;
-    if (typeof raw.message === "string") return raw.message;
+    const rawData = row.raw_github_data as Record<string, unknown>;
+    if (typeof rawData.error === "string") raw = rawData.error;
+    else if (typeof rawData.error_message === "string") raw = rawData.error_message;
+    else if (typeof rawData.message === "string") raw = rawData.message;
   }
-  return "Falha na entrega de e-mail ao destinatário (serviço Resend).";
+  return translateDeliveryError(raw);
 }
 
 function mapSprintMetric(row: SprintMetricRow): SprintMetric {
@@ -455,10 +456,16 @@ export async function getReport(id: string): Promise<Report | null> {
         .limit(1)
         .maybeSingle();
       if (logRes.data?.error_message) {
-        errorMessage = logRes.data.error_message;
+        console.error(`[delivery] Raw delivery failure from delivery_logs for report ${id}:`, logRes.data.error_message);
+        errorMessage = translateDeliveryError(logRes.data.error_message);
+      } else {
+        const fallback = extractErrorMessage(row);
+        console.error(`[delivery] Fallback delivery error for report ${id}:`, fallback);
+        errorMessage = fallback;
       }
-    } catch {
-      // Fallback handled by mapReport
+    } catch (deliveryLogErr) {
+      console.error("[delivery] Failed to query delivery_logs for report:", deliveryLogErr);
+      errorMessage = extractErrorMessage(row);
     }
   }
 

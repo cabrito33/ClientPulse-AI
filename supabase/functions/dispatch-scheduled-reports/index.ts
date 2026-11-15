@@ -212,12 +212,16 @@ Deno.serve(async (req: Request) => {
         const periodStartStr = periodStart.toISOString().split('T')[0];
         const periodEndStr = periodEnd.toISOString().split('T')[0];
 
-        // Determine initial status: 'sent' ONLY if bypass is enabled AND successfully synthesized with AI
-        const isBypass = client.auto_send_enabled === true && !generatedWithoutAi;
+        // Determine initial status: 'sent' ONLY if bypass is enabled, AI succeeded, AND report is NOT empty
+        const isEmptyReport =
+          tasks.all.length === 0 ||
+          (tasks.done.length === 0 && tasks.inProgress.length === 0 && tasks.blocked.length === 0);
+        const isBypass = client.auto_send_enabled === true && !generatedWithoutAi && !isEmptyReport;
         let initialStatus = isBypass ? 'sent' : 'draft';
 
         let emailDeliveryId = null;
         let sentAtTimestamp = null;
+        let deliveryErrorMessage: string | null = null;
 
         // If bypass is active, immediately dispatch email
         if (isBypass && client.email) {
@@ -260,8 +264,10 @@ Deno.serve(async (req: Request) => {
             sentAtTimestamp = new Date().toISOString();
             results.auto_sent++;
           } catch (emailErr: unknown) {
-            console.error(`[dispatch-scheduled-reports] Bypass email failed for client ${client.id}:`, emailErr);
+            const emailErrMsg = emailErr instanceof Error ? emailErr.message : String(emailErr);
+            console.error(`[dispatch-scheduled-reports] Bypass email failed for client ${client.id}:`, emailErrMsg);
             initialStatus = 'failed';
+            deliveryErrorMessage = emailErrMsg;
           }
         }
 
@@ -318,6 +324,25 @@ Deno.serve(async (req: Request) => {
             closed_at: t.closedAt,
           }));
           await supabase.from('report_tasks').insert(taskInserts);
+        }
+
+        // Record audit record in delivery_logs if email was dispatched or failed
+        if (isBypass || initialStatus === 'failed') {
+          try {
+            await supabase.from('delivery_logs').insert({
+              report_id: newReport.id,
+              client_id: client.id,
+              agency_id: client.agency_id,
+              status: initialStatus === 'sent' ? 'sent' : 'failed',
+              email_service: 'resend',
+              recipient_email: client.email,
+              message_id: emailDeliveryId,
+              error_message: initialStatus === 'failed' ? deliveryErrorMessage : null,
+              sent_at: sentAtTimestamp || new Date().toISOString(),
+            });
+          } catch (logErr) {
+            console.warn('[dispatch-scheduled-reports] Failed to record delivery_logs:', logErr);
+          }
         }
 
         results.drafts_created++;

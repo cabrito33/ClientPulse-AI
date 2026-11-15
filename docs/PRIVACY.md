@@ -81,6 +81,7 @@ Para assegurar a confidencialidade e integridade dos dados durante todo o seu ci
    * O áudio do utilizador **não é gravado, guardado nem transmitido** pela aplicação ClientPulse AI.
    * Em determinados navegadores (como Google Chrome ou Apple Safari), o reconhecimento de voz é realizado pelo serviço do próprio fornecedor do browser, sujeito à sua respetiva política de privacidade. O texto transcrito é colocado na caixa de texto local para revisão do utilizador e nunca é enviado automaticamente.
    * A interface adverte explicitamente: *"Não digas o teu token em voz alta: cola-o no campo"*.
+   * A voz funciona no Chrome, Edge e Safari; no Brave e no Firefox está indisponível.
 
 ---
 

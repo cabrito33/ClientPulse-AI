@@ -102,6 +102,15 @@ export function ReportReview({
   }
 
   function approve() {
+    const hasNoTasks =
+      (report.tasksPlanned === 0 && report.tasksCompleted === 0) ||
+      (parsed.done.length === 0 && parsed.blocks.length === 0 && parsed.next.length === 0);
+
+    if (hasNoTasks) {
+      const confirmed = window.confirm("Este relatório não tem tarefas. Enviar mesmo assim?");
+      if (!confirmed) return;
+    }
+
     setError(null);
     startTransition(async () => {
       const result = await approveAndSendAction(report.id, body);
@@ -363,7 +372,7 @@ export function ReportReview({
           <div className="flex-1">
             <p className="font-semibold text-accent-hover">Falha no envio do relatório</p>
             <p className="mt-0.5 text-[12px] text-muted">
-              {error || "Ocorreu um erro no serviço de envio de e-mails. Podes reenviar manualmente clicando no botão ao lado."}
+              {error || "O envio falhou. Tenta de novo e, se continuar, verifica o e-mail do cliente"}
             </p>
           </div>
           <button

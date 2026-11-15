@@ -87,20 +87,46 @@ export default function OnboardingPage() {
 
   // Speech Recognition state (FE-10)
   const [isSpeechSupported, setIsSpeechSupported] = useState(false);
+  const [isBraveBrowser, setIsBraveBrowser] = useState(false);
+  const [isVoicePermanentlyDisabled, setIsVoicePermanentlyDisabled] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    let isMounted = true;
+
+    async function checkCapabilities() {
+      if (typeof window === "undefined") return;
+
+      // c) Deteta o Brave (navigator.brave?.isBrave?.())
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const nav = typeof navigator !== "undefined" ? (navigator as any) : null;
+        if (nav?.brave && typeof nav.brave.isBrave === "function") {
+          const isBrave = await nav.brave.isBrave();
+          if (isBrave && isMounted) {
+            setIsBraveBrowser(true);
+            setIsSpeechSupported(false);
+            return;
+          }
+        }
+      } catch {
+        // Ignora erro de deteção do Brave
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
+      if (SpeechRecognition && isMounted) {
         setIsSpeechSupported(true);
       }
     }
+
+    checkCapabilities();
+
     return () => {
+      isMounted = false;
       if (recognitionRef.current) {
         try {
           recognitionRef.current.abort();
@@ -112,7 +138,7 @@ export default function OnboardingPage() {
   }, []);
 
   function toggleVoiceInput() {
-    if (!isSpeechSupported) return;
+    if (!isSpeechSupported || isBraveBrowser || isVoicePermanentlyDisabled) return;
 
     if (isListening) {
       if (recognitionRef.current) {
@@ -159,12 +185,28 @@ export default function OnboardingPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       recognition.onerror = (event: any) => {
         setIsListening(false);
-        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-          setSpeechError("Permissão de microfone negada. Ativa o microfone nas definições do browser.");
-        } else if (event.error === "no-speech") {
-          // Apenas silêncio
+        const errCode = event.error;
+
+        // a) Mapeia cada código de erro do SpeechRecognition para uma mensagem em PT-PT:
+        if (errCode === "aborted") {
+          // "aborted" → ignora em silêncio
+          return;
+        }
+
+        if (errCode === "network" || errCode === "service-not-allowed") {
+          // "network" ou "service-not-allowed" → desativa o botão de voz até recarregar a página
+          setSpeechError("O reconhecimento de voz não está disponível neste browser ou ligação. Usa o Chrome ou o Edge, ou escreve a mensagem.");
+          setIsVoicePermanentlyDisabled(true);
+        } else if (errCode === "not-allowed") {
+          setSpeechError("Permissão de microfone negada. Ativa-a nas definições do browser.");
+        } else if (errCode === "no-speech") {
+          setSpeechError("Não ouvi nada. Tenta de novo.");
+        } else if (errCode === "audio-capture") {
+          setSpeechError("Não encontrei um microfone.");
+        } else if (errCode === "language-not-supported") {
+          setSpeechError("Idioma de voz não suportado neste browser.");
         } else {
-          setSpeechError(`Erro no reconhecimento de voz (${event.error}). Tenta novamente.`);
+          setSpeechError("Erro no reconhecimento de voz. Tenta novamente ou escreve a mensagem.");
         }
       };
 
@@ -447,9 +489,13 @@ export default function OnboardingPage() {
                 <button
                   type="button"
                   onClick={toggleVoiceInput}
-                  disabled={!isSpeechSupported}
+                  disabled={!isSpeechSupported || isBraveBrowser || isVoicePermanentlyDisabled}
                   title={
-                    !isSpeechSupported
+                    isBraveBrowser
+                      ? "Voz indisponível no Brave. Usa o Chrome ou o Edge."
+                      : isVoicePermanentlyDisabled
+                      ? "O reconhecimento de voz não está disponível neste browser ou ligação. Usa o Chrome ou o Edge, ou escreve a mensagem."
+                      : !isSpeechSupported
                       ? "Voz não disponível neste browser"
                       : isListening
                       ? "A ouvir... Clica para parar"
@@ -457,14 +503,17 @@ export default function OnboardingPage() {
                   }
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-                    !isSpeechSupported && "border-line bg-sand/40 text-muted cursor-not-allowed opacity-75",
-                    isSpeechSupported && !isListening && "border-line bg-paper text-ink-soft hover:bg-surface hover:text-ink cursor-pointer",
-                    isSpeechSupported && isListening && "border-accent bg-accent-soft text-accent animate-pulse cursor-pointer"
+                    (!isSpeechSupported || isBraveBrowser || isVoicePermanentlyDisabled) &&
+                      "border-line bg-sand/40 text-muted cursor-not-allowed opacity-75",
+                    isSpeechSupported && !isBraveBrowser && !isVoicePermanentlyDisabled && !isListening &&
+                      "border-line bg-paper text-ink-soft hover:bg-surface hover:text-ink cursor-pointer",
+                    isSpeechSupported && !isBraveBrowser && !isVoicePermanentlyDisabled && isListening &&
+                      "border-accent bg-accent-soft text-accent animate-pulse cursor-pointer"
                   )}
                 >
                   <Mic className={cn("h-3.5 w-3.5", isListening && "text-accent animate-bounce")} aria-hidden="true" />
                   <span className="hidden sm:inline">
-                    {!isSpeechSupported ? "Voz: indisponível" : isListening ? "a ouvir…" : "Voz"}
+                    {!isSpeechSupported || isBraveBrowser || isVoicePermanentlyDisabled ? "Voz: indisponível" : isListening ? "a ouvir…" : "Voz"}
                   </span>
                 </button>
               </div>

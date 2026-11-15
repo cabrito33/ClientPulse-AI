@@ -176,13 +176,17 @@ Deno.serve(async (req: Request) => {
     const periodEndStr = periodEnd.toISOString().split('T')[0];
 
     // Determine Bypass vs Manual Approval (BE-16)
-    // If client has auto_send_enabled = true (or bypass: true in request body) AND synthesis succeeded with AI
+    // If client has auto_send_enabled = true (or bypass: true in request body), synthesis succeeded with AI, AND report is NOT empty
     const shouldBypass = body.bypass !== undefined ? Boolean(body.bypass) : Boolean(client.auto_send_enabled);
-    const isBypass = shouldBypass && !generatedWithoutAi;
+    const isEmptyReport =
+      tasks.all.length === 0 ||
+      (tasks.done.length === 0 && tasks.inProgress.length === 0 && tasks.blocked.length === 0);
+    const isBypass = shouldBypass && !generatedWithoutAi && !isEmptyReport;
 
     let initialStatus = isBypass ? 'sent' : 'draft';
     let emailDeliveryId: string | null = null;
     let sentAtTimestamp: string | null = null;
+    let deliveryErrorMessage: string | null = null;
 
     if (isBypass && client.email) {
       try {
@@ -224,8 +228,10 @@ Deno.serve(async (req: Request) => {
         emailDeliveryId = emailResult.id;
         sentAtTimestamp = new Date().toISOString();
       } catch (emailErr: unknown) {
-        console.error('[generate-report] Bypass auto-send failed:', emailErr);
+        const emailErrMsg = emailErr instanceof Error ? emailErr.message : String(emailErr);
+        console.error('[generate-report] Bypass auto-send failed:', emailErrMsg);
         initialStatus = 'failed';
+        deliveryErrorMessage = emailErrMsg;
       }
     }
 
@@ -364,6 +370,25 @@ Deno.serve(async (req: Request) => {
       planned: plannedCount,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'client_id,sprint' });
+
+    // Record audit record in delivery_logs if email was dispatched or failed
+    if (isBypass || initialStatus === 'failed') {
+      try {
+        await supabase.from('delivery_logs').insert({
+          report_id: report.id,
+          client_id: client.id,
+          agency_id: client.agency_id,
+          status: initialStatus === 'sent' ? 'sent' : 'failed',
+          email_service: 'resend',
+          recipient_email: client.email,
+          message_id: emailDeliveryId,
+          error_message: initialStatus === 'failed' ? deliveryErrorMessage : null,
+          sent_at: sentAtTimestamp || new Date().toISOString(),
+        });
+      } catch (logErr) {
+        console.warn('[generate-report] Failed to record delivery_logs:', logErr);
+      }
+    }
 
     // 12. Return Success Response
     return new Response(

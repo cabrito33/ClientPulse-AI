@@ -16,11 +16,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 /**
- * Pure helper calculating initial status based on client bypass and AI generation flags.
+ * Pure helper calculating initial status based on client bypass, AI generation, and empty report flags.
  */
-function resolveReportInitialStatus({ autoSendEnabled, bypassOverride, generatedWithoutAi }) {
+function resolveReportInitialStatus({ autoSendEnabled, bypassOverride, generatedWithoutAi, isEmptyReport }) {
   const shouldBypass = bypassOverride !== undefined ? Boolean(bypassOverride) : Boolean(autoSendEnabled);
-  const isBypass = shouldBypass && !generatedWithoutAi;
+  const isBypass = shouldBypass && !generatedWithoutAi && !isEmptyReport;
   return {
     isBypass,
     initialStatus: isBypass ? "sent" : "draft",
@@ -83,6 +83,18 @@ test("BE-16: Explicit bypass override in request body takes precedence over clie
   });
   assert.strictEqual(forcedReview.isBypass, false);
   assert.strictEqual(forcedReview.initialStatus, "draft");
+});
+
+test("BE-16: Safety guard: Empty report is NEVER auto-sent via bypass (pauses in draft for review)", () => {
+  const result = resolveReportInitialStatus({
+    autoSendEnabled: true,
+    generatedWithoutAi: false,
+    isEmptyReport: true,
+  });
+  assert.strictEqual(result.isBypass, false, "Must abort bypass if report is empty");
+  assert.strictEqual(result.initialStatus, "draft");
+  assert.strictEqual(result.uiStatusLabel, "Pendente de revisão");
+  assert.strictEqual(result.badgeTone, "gold");
 });
 
 console.log("🔒 [test-bypass-logic] Todos os testes de lógica de bypass foram definidos com sucesso.");

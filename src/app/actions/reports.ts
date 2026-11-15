@@ -25,6 +25,7 @@ export async function approveAndSendAction(id: string, editedBody: string) {
     }
     return { success: true as const, report, isMock };
   } catch (err: unknown) {
+    console.error(`[actions:reports] approveAndSendAction failed for report ${id}:`, err);
     const message = err instanceof Error ? err.message : "Erro ao aprovar e enviar relatório";
     return { success: false as const, error: message };
   }
@@ -44,6 +45,7 @@ export async function resendReportAction(id: string) {
     }
     return { success: true as const, report, isMock };
   } catch (err: unknown) {
+    console.error(`[actions:reports] resendReportAction failed for report ${id}:`, err);
     const message = err instanceof Error ? err.message : "Erro ao reenviar relatório";
     return { success: false as const, error: message };
   }

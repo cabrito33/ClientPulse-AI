@@ -50,7 +50,8 @@ Antes de iniciar a contagem dos 5 minutos, garanta que tem as seguintes janelas/
 > *"O onboarding foi desenhado para demorar menos de 5 minutos, com o auxílio do nosso assistente conversacional **PulseBot**.*  
 > *Para ligar a agência, basta fornecer um Personal Access Token clássico do GitHub. Em segundos, o sistema consulta a API GraphQL e lista todos os quadros de projeto da organização.*  
 > *Reparem nesta flexibilidade: cada equipa dá nomes diferentes às suas colunas — 'Concluído', 'Done', 'In QA'. O utilizador mapeia de forma visual as suas colunas para as três categorias fundamentais do produto: **Feito**, **Em Curso** e **Bloqueado**.*  
-> *Criamos aqui o perfil do nosso cliente com o agendamento semanal — por exemplo, Sexta-feira às 09:00 UTC — e o setup está completo. Sem fricção, sem configurações complexas."*
+> *Criamos aqui o perfil do nosso cliente com o agendamento semanal — por exemplo, Sexta-feira às 09:00 UTC — e o setup está completo. Sem fricção, sem configurações complexas."*  
+> *(Nota técnica/compatibilidade: O assistente suporta comando de voz opcional. A voz funciona no Chrome, Edge e Safari; no Brave e no Firefox está indisponível).*
 
 ---
 
