@@ -2,14 +2,11 @@
 
 Relatórios semanais de progresso para clientes, gerados com IA a partir do **GitHub Projects**.
 
-Projeto desenvolvido no âmbito da unidade curricular de **Desenvolvimento de Software Ágil** TDA/TDSA ISCTE Sintra, 2026/27).
+Projeto desenvolvido no âmbito da unidade curricular de **Desenvolvimento de Software Ágil** (TDA/TDSA ISCTE Sintra, 2026/27).
 
-**Demo:** https://weekly-client-reports.vercel.app
-**Equipa:** 
-| Afonso Pedro | Backend |
-| Ricardo Santos| Frontend |
-| Manel Homem | Frontend |
-| Miguel Lima | Backend |
+**Link:** https://weekly-client-reports.vercel.app
+**Repositório:** https://github.com/cabrito33/ClientPulse-AI
+**Equipa:** Afonso Pedro, Ricardo Santos, Manel Homem e Miguel Lima (ver [Equipa](#equipa))
 
 ---
 
@@ -24,16 +21,16 @@ O ClientPulse AI liga-se ao GitHub Projects do profissional, extrai as tarefas c
 ### Funcionalidades do MVP
 
 - **Integração com GitHub Projects** (única fonte de dados no MVP): leitura de issues, estados, labels e responsáveis.
-- **Relatório gerado por IA** em 3 blocos: *O que foi feito*, *Bloqueios / Atenção* e *Próximos passos*.
+- **Relatório gerado por IA** em 3 blocos: *O que foi feito*, *Bloqueios / Atenção* e *Próximos passos*, com um rascunho em bruto se a IA estiver indisponível.
 - **Fluxo de aprovação:** edição do rascunho e "Aprovar e Enviar", ou envio automático opcional.
-- **Envio agendado por e-mail**, configurável por cliente (dia e hora).
+- **Envio agendado por e-mail**, configurável por cliente (dia e hora, em UTC).
 - **Portal do Cliente sem login** (`/portal/[token]`): relatório da semana, histórico e gráfico de tarefas concluídas por sprint.
-- **Dashboard do profissional:** relatórios pendentes e enviados, estado dos clientes, métricas por sprint.
-- **Assistente de onboarding** para guiar a ligação ao GitHub e a criação do primeiro cliente.
+- **Dashboard do profissional:** relatórios pendentes e enviados, estado dos clientes, métricas por sprint e métricas de sucesso.
+- **Assistente de onboarding (PulseBot)** para guiar a ligação ao GitHub e a criação do primeiro cliente.
 
 ### Fora do âmbito do MVP
 
-Integrações com Trello, Notion e Jira, aprovações formais por parte do cliente no portal e autenticação do cliente final com credenciais.
+Integrações com Trello, Notion e Jira, aprovações formais por parte do cliente no portal, autenticação do cliente final com credenciais e assistente por voz.
 
 ---
 
@@ -42,16 +39,16 @@ Integrações com Trello, Notion e Jira, aprovações formais por parte do clien
 | Camada | Tecnologia |
 | :--- | :--- |
 | Frontend | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS v4, Recharts |
-| Backend | Supabase (PostgreSQL, Auth, Row Level Security, Edge Functions em Deno) |
+| Backend | Supabase (PostgreSQL, Auth, Row Level Security, Edge Functions em Deno, pg_cron) |
 | IA | Google Gemini API |
 | E-mail | Resend |
 | Deploy | Vercel |
 
 ## Arquitetura (resumo)
 
-- O **frontend** acede aos dados através de uma camada única, `src/lib/api.ts`.
+- O **frontend** acede aos dados através de uma camada única, `src/lib/api.ts`, e às Edge Functions através de `src/lib/edge.ts`.
 - As **Edge Functions** (`supabase/functions/`) fazem a sincronização com o GitHub, a geração dos relatórios, a aprovação e envio, o agendamento e o assistente de onboarding.
-- O **isolamento entre utilizadores** é garantido por Row Level Security. O Portal do Cliente acede aos dados através de uma função SQL segura que exige um token único, com suporte para expiração e revogação.
+- O **isolamento entre utilizadores** é garantido por Row Level Security. O Portal do Cliente acede aos dados através de uma função SQL segura que exige um token único, com expiração e revogação.
 - O sistema processa **apenas metadados** das tarefas (título, descrição, estado, responsáveis, labels). O código-fonte dos repositórios nunca é lido nem guardado.
 
 Documentação detalhada na pasta [`docs/`](./docs):
@@ -64,6 +61,10 @@ Documentação detalhada na pasta [`docs/`](./docs):
 | [`DATABASE.md`](./docs/DATABASE.md) | Esquema da base de dados |
 | [`API.md`](./docs/API.md) | Edge Functions e contratos |
 | [`AUDITORIA.md`](./docs/AUDITORIA.md) | Auditoria técnica |
+| [`PRIVACY.md`](./docs/PRIVACY.md) | Aviso de privacidade e minimização de dados |
+| [`TESTE_REAL.md`](./docs/TESTE_REAL.md) | Roteiro do teste real com a equipa |
+| [`RESULTADOS.md`](./docs/RESULTADOS.md) | Métricas de sucesso do PRD |
+| [`DEMO.md`](./docs/DEMO.md) | Roteiro da demonstração de 5 minutos |
 
 ---
 
@@ -71,7 +72,7 @@ Documentação detalhada na pasta [`docs/`](./docs):
 
 ### Pré-requisitos
 
-- Node.js 20 ou superior
+- Node.js 22 ou superior
 - Conta no [Supabase](https://supabase.com) e [Supabase CLI](https://supabase.com/docs/guides/cli)
 - Chave da [Google AI Studio](https://aistudio.google.com/) (Gemini)
 - (Opcional) Chave da [Resend](https://resend.com). Sem ela, o envio de e-mail funciona em modo de pré-visualização.
@@ -95,11 +96,15 @@ Preenche o `.env.local` com os teus valores. **Nunca faças commit de ficheiros 
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Frontend | Chave pública (respeita a RLS) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Edge Functions | Chave de administração. **Só no servidor, nunca no browser.** |
 | `GEMINI_API_KEY` | Edge Functions | Geração de relatórios e assistente |
+| `GEMINI_MODEL` | Edge Functions | Modelo de IA principal (opcional; mudar aqui se o Google retirar um modelo) |
+| `GEMINI_FALLBACK_MODEL` | Edge Functions | Modelo de contingência (opcional) |
 | `RESEND_API_KEY` | Edge Functions | Envio de e-mails (opcional em desenvolvimento) |
 | `RESEND_FROM_EMAIL` | Edge Functions | Remetente dos e-mails |
+| `RESEND_WEBHOOK_SECRET` | Rota `/api/webhooks/resend` | Segredo para verificar o webhook de aberturas de e-mail |
 | `SCHEDULED_FUNCTION_SECRET` | Edge Functions e cron | Protege o endpoint de envios agendados |
 | `NEXT_PUBLIC_APP_URL` | Frontend e Functions | URL base da aplicação (links nos e-mails) |
 | `PAT_ENCRYPTION_KEY` | Edge Functions | Chave de cifragem do token do GitHub em repouso |
+| `PORTAL_TOKEN_EXPIRATION_DAYS` | Edge Functions | Validade dos links do portal (por defeito 90 dias) |
 
 Segredos das Edge Functions definem-se com `supabase secrets set NOME=valor`.
 
@@ -107,11 +112,15 @@ Segredos das Edge Functions definem-se com `supabase secrets set NOME=valor`.
 
 ```bash
 supabase link --project-ref <o-teu-project-ref>
-supabase db push                  # aplica as migrações em supabase/migrations
+supabase db push --remote         # aplica as migrações em supabase/migrations
 supabase functions deploy         # publica as Edge Functions
 ```
 
-### 4. Arrancar a aplicação
+### 4. Agendamento automático (cron)
+
+O envio agendado usa `pg_cron` e `pg_net` (um job horário que chama a função `dispatch-scheduled-reports`). O script está em [`supabase/cron/schedule_dispatch.sql`](./supabase/cron/schedule_dispatch.sql) e o procedimento em [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) (secção 5.6). O segredo fica no Supabase Vault, nunca no código.
+
+### 5. Arrancar a aplicação
 
 ```bash
 npm run dev
@@ -140,6 +149,7 @@ npm run build         # build de produção Next.js
   - `test:tracking` (BE-21): Idempotência do carimbo `openedAt`, webhooks e pixel 1x1.
   - `test:dispatch` (BE-15/BE-16): Idempotência do despachador horário e prevenção de envios duplicados na mesma semana.
   - `test:email` (DO-04): Validação do URL canónico do portal `<appUrl>/portal/<token>` em PT e EN.
+- **Isolamento de dados (RLS):** `supabase/tests/rls_isolation_test.sql` executa 10 verificações de isolamento entre agências e de acesso do portal por token.
 - **Testes End-to-End (DO-05):** Fora do âmbito do MVP de 17/11/2026. Fica registado como evolução futura (testes E2E com Playwright/Cypress simulando fluxos completos em ambiente de staging).
 - **Integração Contínua (CI):** O workflow do GitHub Actions (`.github/workflows/ci.yml`) corre em Node.js 22, validando lint, tipagem estrita, conformidade de server actions, todos os testes unitários e de integração (`npm test`) e compilação do Next.js.
 
@@ -149,15 +159,24 @@ npm run build         # build de produção Next.js
 
 ```
 src/
-  app/             Páginas (landing, login, dashboard, portal, onboarding)
-  components/      Componentes de UI, dashboard e marketing
-  lib/             Acesso a dados (api.ts), clientes Supabase, utilitários
-  data/ e types/   Tipos e dados de apoio
+  app/
+    actions/       Server Actions (gerar, aprovar e enviar, onboarding)
+    api/           Rotas de API (pixel de abertura de e-mail, webhook do Resend)
+    dashboard/     Painel do profissional (clientes, revisão de relatórios)
+    login/ register/  Autenticação
+    onboarding/    Assistente de configuração (PulseBot)
+    portal/[token]/   Portal do cliente sem login
+  components/      UI: dashboard, marketing e componentes base
+  lib/             api.ts (acesso a dados), edge.ts (Edge Functions), clientes Supabase, utilitários
+  data/ e types/   Dados de apoio e tipos da base de dados
 supabase/
-  migrations/      Esquema SQL, RLS e funções
-  functions/       Edge Functions (Deno)
+  migrations/      Esquema SQL, RLS, funções e métricas (001 a 012)
+  functions/       Edge Functions em Deno (+ _shared com código comum)
+  cron/            Script de agendamento (pg_cron)
   tests/           Testes de isolamento RLS
+scripts/           Scripts de teste automatizado (npm test)
 docs/              Documentação do projeto
+.github/           Workflow de CI e template de Pull Request
 ```
 
 ---
@@ -165,42 +184,49 @@ docs/              Documentação do projeto
 ## Metodologia ágil
 
 - **Gestão do trabalho:** GitHub Projects com quadro Kanban, issues numeradas por área (`FE-`, `BE-`, `DO-`, `DOC-`) e prioridade P0 a P3.
-- **Sprints:** [DURAÇÃO E NÚMERO DE SPRINTS, ex.: 3 sprints semanais].
-- **Branches e PRs:** trabalho em branches de funcionalidade, integrado por Pull Request com referência à issue (`Closes #N`).
+- **Sprints:** 3 sprints (Sprint 1 a 3 no quadro), ao longo das 5 semanas do calendário do PRD.
+- **Branches e PRs:** a integração do backend foi feita direta no `Main` pela equipa de backend; daqui para a frente, trabalho em branches de funcionalidade, integrado por Pull Request com referência à issue (`Closes #N`).
 - **Commits:** formato Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`).
-- **Definição de pronto:** lint e verificação de tipos sem erros, sem segredos no repositório e critérios de aceitação da issue cumpridos.
+- **Definição de pronto:** `npm run check` sem erros (lint, tipos, testes e build), sem segredos no repositório e critérios de aceitação da issue cumpridos.
 
 ## Estado do projeto
 
+*Atualizado a 15/11/2026.*
+
 | Área | Estado |
 | :--- | :--- |
-| Landing page, dashboard, revisão de rascunhos, portal do cliente | Concluído |
-| Esquema da base de dados, RLS e acesso seguro ao portal | Concluído |
+| Landing page, dashboard, revisão de rascunhos e portal do cliente | Concluído |
+| Esquema da base de dados, RLS e acesso seguro ao portal (isolamento 10/10) | Concluído |
 | Autenticação (Supabase Auth) | Concluído |
-| Edge Functions (sync GitHub, geração, envio, agendamento) | Implementadas |
-| Ligação do frontend às Edge Functions | Em curso |
-| Cifragem do token do GitHub em repouso | Em curso |
-| Chatbot de onboarding ligado ao backend | Em curso |
-| Teste real com o GitHub Project da equipa | Por fazer |
-
-*Atualizar esta tabela à medida que o projeto avança.*
+| Integração com GitHub Projects (PAT cifrado, mapeamento de colunas) | Concluído |
+| Geração de relatórios com IA, com rascunho em bruto como contingência | Concluído |
+| Aprovação, envio por e-mail e portal sem login (links com expiração e renovação) | Concluído |
+| Assistente de onboarding (PulseBot) | Concluído (voz: evolução futura) |
+| Agendamento automático (cron horário em produção) | Concluído |
+| Envio direto sem aprovação (bypass) | Implementado, a validar no teste real |
+| Métricas de sucesso | Implementadas, a recolher no teste real |
+| Tracking de abertura de e-mail | Em revisão (depende de domínio verificado no Resend) |
+| Teste real com o GitHub Project da equipa (2 ciclos) | Por fazer |
 
 ## Segurança e privacidade
 
 - Row Level Security em todas as tabelas, com isolamento por utilizador.
 - Portal do Cliente protegido por token UUID não adivinhável, com expiração e revogação.
-- Chaves e segredos apenas em variáveis de ambiente, nunca no código.
+- O token do GitHub é guardado cifrado (AES-GCM) e não é legível pelo browser.
+- Chaves e segredos apenas em variáveis de ambiente e no Supabase Vault, nunca no código.
+- As Edge Functions de gestão só aceitam pedidos do domínio da aplicação (CORS restrito), e o webhook do e-mail verifica a assinatura.
 - Apenas metadados das tarefas são enviados à IA. O código-fonte nunca é lido.
 - O rascunho gerado pela IA é sempre revisto pelo profissional, a menos que este ative o envio automático.
 
 ## Equipa
 
 | Nome | Função |
+| :--- | :--- |
 | Afonso Pedro | Backend |
-| Ricardo Santos| Frontend |
+| Ricardo Santos | Frontend |
 | Manel Homem | Frontend |
 | Miguel Lima | Backend |
 
 ## Licença
 
-Projeto académico. [INDICAR LICENÇA OU "Todos os direitos reservados"]
+Projeto académico. Todos os direitos reservados © 2026 Equipa ClientPulse AI.
