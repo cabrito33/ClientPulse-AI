@@ -13,6 +13,12 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { invokeEdgeFunction, translateDeliveryError } from "@/lib/edge";
+import {
+  parseBodyToSections,
+  extractTaskCounts,
+  calculateDashboardSummary,
+} from "@/lib/report-utils";
+export { parseBodyToSections, extractTaskCounts, calculateDashboardSummary };
 import type { Tables } from "@/types/database.types";
 import type {
   Client,
@@ -157,12 +163,20 @@ function mapClient(row: ClientRow): Client {
  * summary_next_steps) while the UI expects a structured `sections` object
  * and a rendered `body` string. We reconstruct both here.
  */
-function mapReport(row: ReportRow, customErrorMessage?: string | null): Report {
+/**
+ * Maps a Supabase `reports` row (or optimized projected row) to the frontend `Report` type.
+ *
+ * The DB stores three text columns (summary_done, summary_blockers,
+ * summary_next_steps) while the UI expects a structured `sections` object
+ * and a rendered `body` string. We reconstruct both here.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapReport(row: any, customErrorMessage?: string | null): Report {
   // Parse the three summary columns into the structured section shape.
   const sections: ReportSection = {
-    done: splitLines(row.summary_done),
-    blocks: splitLines(row.summary_blockers),
-    next: splitLines(row.summary_next_steps),
+    done: splitLines(row.summary_done || ""),
+    blocks: splitLines(row.summary_blockers || ""),
+    next: splitLines(row.summary_next_steps || ""),
   };
 
   // Render a markdown body the editor can round-trip.
@@ -171,16 +185,13 @@ function mapReport(row: ReportRow, customErrorMessage?: string | null): Report {
   // Derive a week label from the period dates.
   const weekLabel = buildWeekLabel(row.period_start, row.period_end);
 
-  // Count tasks from embedded raw_github_data if available.
+  // Count tasks from embedded raw_github_data or direct projected fields.
   const { tasksCompleted, tasksPlanned } = extractTaskCounts(
-    row.raw_github_data,
+    row.raw_github_data ?? row,
   );
 
   // Map DB status to UI status.
-  const statusMap: Record<
-    ReportRow["status"],
-    Report["status"]
-  > = {
+  const statusMap: Record<string, Report["status"]> = {
     draft: "draft",
     approved: "pending_approval",
     sent: "sent",
@@ -194,16 +205,29 @@ function mapReport(row: ReportRow, customErrorMessage?: string | null): Report {
     !Array.isArray(row.raw_github_data)
       ? (row.raw_github_data as Record<string, unknown>)
       : null;
-  const generatedWithoutAi = Boolean(rawObj?.generated_without_ai);
+
+  const generatedWithoutAi = Boolean(
+    rawObj?.generated_without_ai ??
+      (row.generated_without_ai === "true" || row.generated_without_ai === true)
+  );
+
+  const aiError = rawObj?.ai_error ?? row.ai_error;
 
   const errorMessage =
     customErrorMessage !== undefined
       ? customErrorMessage
       : status === "failed"
         ? extractErrorMessage(row)
-        : generatedWithoutAi && rawObj?.ai_error
-          ? String(rawObj.ai_error)
+        : generatedWithoutAi && aiError
+          ? String(aiError)
           : null;
+
+  const unmappedCols = rawObj?.unmapped_columns ?? row.unmapped_columns;
+  const rawIgnored = rawObj?.ignored_tasks_count ?? row.ignored_tasks_count;
+  const ignoredTasksCount =
+    rawIgnored !== undefined && rawIgnored !== null && !isNaN(Number(rawIgnored))
+      ? Number(rawIgnored)
+      : undefined;
 
   return {
     id: row.id,
@@ -224,18 +248,16 @@ function mapReport(row: ReportRow, customErrorMessage?: string | null): Report {
     reviewOpenedAt: row.review_opened_at ?? null,
     errorMessage,
     generatedWithoutAi,
-    unmappedColumns: Array.isArray(rawObj?.unmapped_columns)
-      ? (rawObj.unmapped_columns as unknown[]).map(String)
+    unmappedColumns: Array.isArray(unmappedCols)
+      ? unmappedCols.map(String)
       : undefined,
-    ignoredTasksCount:
-      typeof rawObj?.ignored_tasks_count === "number"
-        ? rawObj.ignored_tasks_count
-        : undefined,
+    ignoredTasksCount,
   };
 }
 
 /** Extracts an error message for failed reports from raw_github_data or defaults, translated to PT-PT. */
-function extractErrorMessage(row: ReportRow): string {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractErrorMessage(row: any): string {
   let raw: string | null = null;
   if (
     row.raw_github_data &&
@@ -246,6 +268,11 @@ function extractErrorMessage(row: ReportRow): string {
     if (typeof rawData.error === "string") raw = rawData.error;
     else if (typeof rawData.error_message === "string") raw = rawData.error_message;
     else if (typeof rawData.message === "string") raw = rawData.message;
+  }
+  if (!raw) {
+    if (typeof row.error === "string") raw = row.error;
+    else if (typeof row.error_message === "string") raw = row.error_message;
+    else if (typeof row.message === "string") raw = row.message;
   }
   return translateDeliveryError(raw);
 }
@@ -340,40 +367,45 @@ export function isoWeekNumber(dateStr: string): number {
   return 1 + Math.ceil((firstThursday - target.getTime()) / 604800000);
 }
 
-/** Extracts task counts from the raw GitHub JSON blob. */
-function extractTaskCounts(raw: unknown): {
-  tasksCompleted: number;
-  tasksPlanned: number;
-} {
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    const obj = raw as Record<string, unknown>;
-    if ("tasks_completed" in obj && "tasks_planned" in obj) {
-      return {
-        tasksCompleted: Number(obj.tasks_completed) || 0,
-        tasksPlanned: Number(obj.tasks_planned) || 0,
-      };
-    }
-    if (Array.isArray(obj.tasks)) {
-      const completed = (obj.tasks as Record<string, unknown>[]).filter(
-        (t) =>
-          t?.statusCategory === "done" ||
-          t?.state === "CLOSED" ||
-          t?.status === "Done"
-      ).length;
-      return { tasksCompleted: completed, tasksPlanned: obj.tasks.length };
-    }
-  }
-  if (Array.isArray(raw)) {
-    const completed = (raw as Record<string, unknown>[]).filter(
-      (t) =>
-        t?.statusCategory === "done" ||
-        t?.state === "CLOSED" ||
-        t?.status === "Done"
-    ).length;
-    return { tasksCompleted: completed, tasksPlanned: raw.length };
-  }
-  return { tasksCompleted: 0, tasksPlanned: 0 };
-}
+export const CLIENT_LIST_COLUMNS = [
+  "id",
+  "name",
+  "company_name",
+  "email",
+  "language",
+  "communication_tone",
+  "schedule_day_of_week",
+  "schedule_hour_utc",
+  "auto_send_enabled",
+  "portal_token",
+  "github_project_title",
+  "created_at",
+  "github_project_id",
+  "column_mapping",
+].join(", ");
+
+export const REPORT_LIST_COLUMNS = [
+  "id",
+  "client_id",
+  "period_start",
+  "period_end",
+  "status",
+  "summary_done",
+  "summary_blockers",
+  "summary_next_steps",
+  "created_at",
+  "sent_at",
+  "opened_at",
+  "review_opened_at",
+  "tasks_completed:raw_github_data->>tasks_completed",
+  "tasks_planned:raw_github_data->>tasks_planned",
+  "generated_without_ai:raw_github_data->>generated_without_ai",
+  "ai_error:raw_github_data->>ai_error",
+  "error:raw_github_data->>error",
+  "error_message:raw_github_data->>error_message",
+  "unmapped_columns:raw_github_data->unmapped_columns",
+  "ignored_tasks_count:raw_github_data->>ignored_tasks_count",
+].join(", ");
 
 /* ------------------------------------------------------------------ */
 /*  Clients                                                            */
@@ -383,10 +415,11 @@ export async function getClients(): Promise<Client[]> {
   const supabase = await createClient();
   const result = await supabase
     .from("clients")
-    .select("*")
+    .select(CLIENT_LIST_COLUMNS)
     .order("name");
   const rows = assertOk(result, "getClients");
-  return rows.map(mapClient);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (rows as any[]).map(mapClient);
 }
 
 export async function getClient(id: string): Promise<Client | null> {
@@ -421,10 +454,11 @@ export async function getReports(): Promise<Report[]> {
   const supabase = await createClient();
   const result = await supabase
     .from("reports")
-    .select("*")
+    .select(REPORT_LIST_COLUMNS)
     .order("period_start", { ascending: false });
   const rows = assertOk(result, "getReports");
-  return rows.map((r) => mapReport(r));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (rows as any[]).map((r) => mapReport(r));
 }
 
 export async function getReport(id: string): Promise<Report | null> {
@@ -496,11 +530,12 @@ export async function getReportsForClient(clientId: string): Promise<Report[]> {
   const supabase = await createClient();
   const result = await supabase
     .from("reports")
-    .select("*")
+    .select(REPORT_LIST_COLUMNS)
     .eq("client_id", clientId)
     .order("period_start", { ascending: false });
   const rows = assertOk(result, `getReportsForClient(${clientId})`);
-  return rows.map((r) => mapReport(r));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (rows as any[]).map((r) => mapReport(r));
 }
 
 export async function getPendingReports(): Promise<Report[]> {
@@ -509,33 +544,36 @@ export async function getPendingReports(): Promise<Report[]> {
   // "draft" maps directly to "draft".
   const result = await supabase
     .from("reports")
-    .select("*")
+    .select(REPORT_LIST_COLUMNS)
     .in("status", ["draft", "approved"])
     .order("period_start", { ascending: false });
   const rows = assertOk(result, "getPendingReports");
-  return rows.map((r) => mapReport(r));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (rows as any[]).map((r) => mapReport(r));
 }
 
 export async function getFailedReports(): Promise<Report[]> {
   const supabase = await createClient();
   const result = await supabase
     .from("reports")
-    .select("*")
+    .select(REPORT_LIST_COLUMNS)
     .eq("status", "failed")
     .order("period_start", { ascending: false });
   const rows = assertOk(result, "getFailedReports");
-  return rows.map((r) => mapReport(r));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (rows as any[]).map((r) => mapReport(r));
 }
 
 export async function getSentReports(): Promise<Report[]> {
   const supabase = await createClient();
   const result = await supabase
     .from("reports")
-    .select("*")
+    .select(REPORT_LIST_COLUMNS)
     .eq("status", "sent")
     .order("sent_at", { ascending: false });
   const rows = assertOk(result, "getSentReports");
-  return rows.map((r) => mapReport(r));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (rows as any[]).map((r) => mapReport(r));
 }
 
 /** Most recent report for a portal token, plus its history and metrics. */
@@ -704,8 +742,8 @@ export async function getSuccessMetrics(): Promise<SuccessMetrics | null> {
 export async function getDashboardSummary(): Promise<DashboardSummary> {
   const supabase = await createClient();
 
-  // Count queries run in parallel (head-only, no row data returned).
-  const [pendingResult, sentResult, activeResult] = await Promise.all([
+  // Run all 4 independent queries in parallel with Promise.all
+  const [pendingResult, sentResult, activeResult, reportsResult] = await Promise.all([
     supabase
       .from("reports")
       .select("id", { count: "exact", head: true })
@@ -717,11 +755,10 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     supabase
       .from("clients")
       .select("id", { count: "exact", head: true }),
+    supabase
+      .from("reports")
+      .select("status, tasks_completed:raw_github_data->>tasks_completed, tasks_planned:raw_github_data->>tasks_planned"),
   ]);
-
-  // Fetch report rows separately to avoid TypeScript narrowing issues
-  // when mixing head-only and data-returning queries inside Promise.all.
-  const reportsResult = await supabase.from("reports").select("*");
 
   const pending = pendingResult.count ?? 0;
   const sentThisMonth = sentResult.count ?? 0;
@@ -730,29 +767,16 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   if (reportsResult.error) {
     throw new Error(`[api] getDashboardSummary/reports: ${reportsResult.error.message}`);
   }
-  const allReports: ReportRow[] = (reportsResult.data as ReportRow[] | null) ?? [];
-  let totalDone = 0;
-  let totalPlanned = 0;
-  let failed = 0;
-  for (const r of allReports) {
-    const counts = extractTaskCounts(r.raw_github_data);
-    totalDone += counts.tasksCompleted;
-    totalPlanned += counts.tasksPlanned;
-    if (r.status === "failed") {
-      failed++;
-    }
-  }
 
-  return {
-    pending,
-    sentThisMonth,
-    activeClients,
-    failed,
-    avgCompletionRate: Math.round(
-      (totalDone / Math.max(totalPlanned, 1)) * 100,
-    ),
-    timeSavedHours: Math.round(sentThisMonth * 2.5),
-  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allReports = (reportsResult.data as any[] | null) ?? [];
+
+  return calculateDashboardSummary({
+    pendingCount: pending,
+    sentCount: sentThisMonth,
+    activeClientsCount: activeClients,
+    reportRows: allReports,
+  });
 }
 
 export async function getSprintCards(): Promise<SprintCard[]> {
@@ -871,7 +895,7 @@ export async function syncSprintMetricsFromReports(
   // 2. Fallback: derive metrics from client reports directly
   const { data: reports, error } = await supabase
     .from("reports")
-    .select("*")
+    .select("client_id, agency_id, period_start, period_end, created_at, summary_done, tasks_completed:raw_github_data->>tasks_completed, tasks_planned:raw_github_data->>tasks_planned")
     .eq("client_id", clientId)
     .order("period_end", { ascending: true });
 
@@ -890,7 +914,8 @@ export async function syncSprintMetricsFromReports(
     }
   >();
 
-  for (const r of reports as ReportRow[]) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const r of reports as any[]) {
     const dateToCheck = r.period_end || r.period_start || r.created_at;
     const weekNum = isoWeekNumber(dateToCheck);
     // Do not count future weeks
@@ -898,7 +923,7 @@ export async function syncSprintMetricsFromReports(
 
     const sprint = `S${weekNum}`;
     const label = `Semana ${weekNum}`;
-    const counts = extractTaskCounts(r.raw_github_data);
+    const counts = extractTaskCounts(r.raw_github_data ?? r);
 
     let completed = counts.tasksCompleted;
     let planned = counts.tasksPlanned;
@@ -1084,7 +1109,7 @@ export async function generateReportOnDemand(
       const supabase = await createClient();
       const { data: recentDraft } = await supabase
         .from("reports")
-        .select("*")
+        .select("id, created_at, updated_at")
         .eq("client_id", clientId)
         .eq("status", "draft")
         .order("created_at", { ascending: false })
@@ -1280,9 +1305,6 @@ export async function recordReportOpen(
 /* ------------------------------------------------------------------ */
 /*  Pure utilities — still exported for components that import them    */
 /* ------------------------------------------------------------------ */
-
-import { parseBodyToSections } from "@/lib/report-utils";
-export { parseBodyToSections };
 
 /**
  * @deprecated In-memory override — kept only for test isolation.

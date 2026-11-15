@@ -70,3 +70,98 @@ export function parseBodyToSections(body: string): ReportSection | null {
   }
   return result;
 }
+
+/**
+ * Extracts task counts from the raw GitHub JSON blob or PostgREST JSON projections.
+ * Pure function supporting:
+ * - Direct object with tasks_completed and tasks_planned (numeric or string from PostgREST ->>)
+ * - Object with nested tasks array
+ * - Direct array of task items
+ */
+export function extractTaskCounts(raw: unknown): {
+  tasksCompleted: number;
+  tasksPlanned: number;
+} {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>;
+    if ("tasks_completed" in obj && "tasks_planned" in obj) {
+      return {
+        tasksCompleted: Number(obj.tasks_completed) || 0,
+        tasksPlanned: Number(obj.tasks_planned) || 0,
+      };
+    }
+    if (Array.isArray(obj.tasks)) {
+      const completed = (obj.tasks as Record<string, unknown>[]).filter(
+        (t) =>
+          t?.statusCategory === "done" ||
+          t?.state === "CLOSED" ||
+          t?.status === "Done"
+      ).length;
+      return { tasksCompleted: completed, tasksPlanned: obj.tasks.length };
+    }
+  }
+  if (Array.isArray(raw)) {
+    const completed = (raw as Record<string, unknown>[]).filter(
+      (t) =>
+        t?.statusCategory === "done" ||
+        t?.state === "CLOSED" ||
+        t?.status === "Done"
+    ).length;
+    return { tasksCompleted: completed, tasksPlanned: raw.length };
+  }
+  return { tasksCompleted: 0, tasksPlanned: 0 };
+}
+
+export interface DashboardSummaryCounts {
+  pendingCount: number;
+  sentCount: number;
+  activeClientsCount: number;
+  reportRows: Array<{
+    status: string;
+    tasks_completed?: number | string | null;
+    tasks_planned?: number | string | null;
+    raw_github_data?: unknown;
+  }>;
+}
+
+/**
+ * Pure calculation function for DashboardSummary metrics.
+ * Reused across API layer and unit tests to ensure identical results.
+ */
+export function calculateDashboardSummary({
+  pendingCount,
+  sentCount,
+  activeClientsCount,
+  reportRows,
+}: DashboardSummaryCounts): {
+  pending: number;
+  sentThisMonth: number;
+  activeClients: number;
+  failed: number;
+  avgCompletionRate: number;
+  timeSavedHours: number;
+} {
+  let totalDone = 0;
+  let totalPlanned = 0;
+  let failed = 0;
+
+  for (const r of reportRows) {
+    const counts = extractTaskCounts(r.raw_github_data ?? r);
+    totalDone += counts.tasksCompleted;
+    totalPlanned += counts.tasksPlanned;
+    if (r.status === "failed") {
+      failed++;
+    }
+  }
+
+  return {
+    pending: pendingCount,
+    sentThisMonth: sentCount,
+    activeClients: activeClientsCount,
+    failed,
+    avgCompletionRate: Math.round(
+      (totalDone / Math.max(totalPlanned, 1)) * 100
+    ),
+    timeSavedHours: Math.round(sentCount * 2.5),
+  };
+}
