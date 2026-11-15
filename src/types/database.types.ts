@@ -479,6 +479,46 @@ export interface Database {
           },
         ];
       };
+      audit_logs: {
+        Row: {
+          id: string;
+          agency_id: string;
+          actor_user_id: string | null;
+          action: string;
+          entity_type: string;
+          entity_id: string;
+          details: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          agency_id: string;
+          actor_user_id?: string | null;
+          action: string;
+          entity_type: string;
+          entity_id: string;
+          details?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          agency_id?: string;
+          actor_user_id?: string | null;
+          action?: string;
+          entity_type?: string;
+          entity_id?: string;
+          details?: Json;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "audit_logs_agency_id_fkey";
+            columns: ["agency_id"];
+            referencedRelation: "agencies";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;

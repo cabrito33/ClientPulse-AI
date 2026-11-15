@@ -360,6 +360,71 @@ BEGIN
     END;
 
     -- =========================================================================
+    -- TESTE 13: Agência A NÃO lê os audit_logs da Agência B (BE-04)
+    -- =========================================================================
+    RAISE NOTICE '';
+    RAISE NOTICE '[TESTE 13] Agência A NÃO lê os audit_logs da Agência B...';
+
+    SET LOCAL ROLE authenticated;
+    PERFORM set_config('request.jwt.claim.sub', v_user_a::text, true);
+
+    BEGIN
+        SELECT COUNT(*) INTO v_count
+        FROM public.audit_logs
+        WHERE agency_id = v_agency_b;
+
+        IF v_count = 0 THEN
+            RAISE NOTICE '  ✅ PASS — Agência A obteve 0 registos de auditoria da Agência B';
+        ELSE
+            RAISE EXCEPTION '  ❌ RLS FAIL — Agência A conseguiu ler % log(s) da Agência B!', v_count;
+        END IF;
+    END;
+
+    -- =========================================================================
+    -- TESTE 14: Role authenticated NÃO consegue inserir em audit_logs (BE-04)
+    -- =========================================================================
+    RAISE NOTICE '';
+    RAISE NOTICE '[TESTE 14] Role authenticated NÃO consegue inserir diretamente em audit_logs...';
+
+    BEGIN
+        INSERT INTO public.audit_logs (
+            agency_id, action, entity_type, entity_id, details
+        ) VALUES (
+            v_agency_a, 'unauthorized_action', 'report', gen_random_uuid(), '{"test": true}'::jsonb
+        );
+
+        RAISE EXCEPTION '  ❌ SECURITY FAIL — authenticated role conseguiu fazer INSERT direto em audit_logs!';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE '  ✅ PASS — INSERT rejeitado com permission denied (insufficient_privilege)';
+    WHEN OTHERS THEN
+        RAISE NOTICE '  ✅ PASS — INSERT rejeitado pela base de dados: %', SQLERRM;
+    END;
+
+    -- =========================================================================
+    -- TESTE 15: Aprovar um relatório gera um registo em audit_logs (BE-04)
+    -- =========================================================================
+    RAISE NOTICE '';
+    RAISE NOTICE '[TESTE 15] Aprovar um relatório gera automaticamente um registo em audit_logs...';
+
+    -- Executar aprovação como Utilizador A (atualizar status para 'approved')
+    UPDATE public.reports
+    SET status = 'approved'
+    WHERE id = v_report_a;
+
+    -- Verificar como Utilizador A se o registo de auditoria foi criado pelo trigger SECURITY DEFINER
+    SELECT COUNT(*) INTO v_count
+    FROM public.audit_logs
+    WHERE agency_id = v_agency_a
+      AND entity_id = v_report_a
+      AND action = 'report_approved';
+
+    IF v_count >= 1 THEN
+        RAISE NOTICE '  ✅ PASS — Trigger gerou registo de auditoria com ação report_approved';
+    ELSE
+        RAISE EXCEPTION '  ❌ FAIL — Nenhum registo de auditoria encontrado para a aprovação do relatório!';
+    END IF;
+
+    -- =========================================================================
     -- TEARDOWN: Reverter ao role de superuser e limpar dados de teste
     -- =========================================================================
     RAISE NOTICE '';

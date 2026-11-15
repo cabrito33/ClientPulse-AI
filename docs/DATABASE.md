@@ -20,6 +20,18 @@ erDiagram
     clients ||--o{ reports : "receives (1:N)"
     clients ||--o{ report_tasks : "tracks (1:N)"
     reports ||--o{ report_tasks : "contains (1:N)"
+    agencies ||--o{ audit_logs : "records (1:N)"
+
+    audit_logs {
+        uuid id PK
+        uuid agency_id FK "agencies"
+        uuid actor_user_id FK "auth.users"
+        text action
+        text entity_type
+        uuid entity_id
+        jsonb details
+        timestamptz created_at
+    }
 
     agencies {
         uuid id PK
@@ -360,6 +372,27 @@ Registo de auditoria de cada envio de e-mail transaccional (Resend API).
 | `sent_at` | `TIMESTAMPTZ` | `DEFAULT now()` | Timestamp de envio. |
 
 **RLS:** SELECT e INSERT para a agência proprietária. UPDATE reservado ao `service_role` (Edge Functions).
+
+---
+
+### 4.5 `audit_logs` (BE-04 Minimal Audit Logging — Migration 013)
+Tabela de auditoria imutável que regista eventos operacionais críticos da agência sem expor credenciais ou segredos.
+
+| Coluna | Tipo | Restrições | Descrição |
+| :--- | :--- | :--- | :--- |
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Identificador único do log. |
+| `agency_id` | `UUID` | `NOT NULL REFERENCES agencies(id) ON DELETE CASCADE` | Agência proprietária do registo. |
+| `actor_user_id` | `UUID` | `NULL REFERENCES auth.users(id) ON DELETE SET NULL` | Utilizador (`auth.uid()`) que disparou a ação, ou `NULL` em rotinas de background/cron. |
+| `action` | `TEXT` | `NOT NULL` | Tipo de evento (ex: `report_created`, `report_approved`, `portal_token_created`, `portal_token_revoked`, `client_created`, `client_schedule_updated`, `github_integration_connected`). |
+| `entity_type` | `TEXT` | `NOT NULL` | Entidade afetada (`report`, `portal_token`, `client`, `github_integration`). |
+| `entity_id` | `UUID` | `NOT NULL` | ID da entidade afetada. |
+| `details` | `JSONB` | `NOT NULL DEFAULT '{}'::jsonb` | Metadados contextuais (ex: estados anterior/novo, agendamento alterado). |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT now()` | Carimbo temporal do evento. |
+
+**Garantias de Privacidade e Segurança:**
+- O campo `details` é estritamente higienizado pelos triggers: **nunca** armazena PATs, texto cifrado (`pat_token_encrypted`) nem tokens do portal (`portal_token`).
+- **RLS:** A agência só tem permissão de leitura (`SELECT`) sobre os seus próprios registos (`agency_id = public.get_my_agency_id()`).
+- **Bloqueio de Escrita na Aplicação:** `REVOKE INSERT, UPDATE, DELETE FROM authenticated, anon, public;` — as inserções são geradas exclusivamente por triggers internos `SECURITY DEFINER` com `search_path = public`.
 
 ---
 
