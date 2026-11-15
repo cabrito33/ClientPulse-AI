@@ -41,7 +41,7 @@ Antes de iniciar qualquer ciclo, confirme a configuração de todos os component
 - [ ] **3. Agendamento Horário (Cron Job) Ativo:**
   No **SQL Editor** do Supabase, confirme se o agendamento horário está ativo:
   ```sql
-  SELECT jobid, schedule, command, active FROM cron.job WHERE jobname = 'dispatch-hourly-reports';
+  SELECT jobid, schedule, command, active FROM cron.job WHERE jobname = 'dispatch-reports-hourly';
   ```
   *(Se a lista estiver vazia, aplique as instruções de `supabase/cron/schedule_dispatch.sql` descritas na Secção 5.6 do `docs/ARCHITECTURE.md`).*
 

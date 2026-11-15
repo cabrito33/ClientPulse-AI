@@ -246,7 +246,7 @@ Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.s
    SELECT cron.schedule(
        'dispatch-reports-hourly',
        '0 * * * *',
-       $$
+       $cron$
        SELECT net.http_post(
            url := 'https://<PROJECT_REF>.supabase.co/functions/v1/dispatch-scheduled-reports',
            headers := jsonb_build_object(
@@ -255,7 +255,7 @@ Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.s
            ),
            body := '{}'::jsonb
        );
-       $$
+       $cron$
    );
    ```
 

@@ -20,44 +20,24 @@ CREATE EXTENSION IF NOT EXISTS "pg_cron";
 CREATE EXTENSION IF NOT EXISTS "pg_net";
 
 -- 2. Remover agendamento anterior para evitar duplicação de jobs
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'dispatch-reports-hourly') THEN
-        PERFORM cron.unschedule('dispatch-reports-hourly');
-    END IF;
-END $$;
+SELECT cron.unschedule('dispatch-reports-hourly')
+WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'dispatch-reports-hourly');
 
 -- 3. Agendar o job horário (minuto 0 de cada hora UTC)
 -- Lê o segredo de forma segura a partir do Supabase Vault e invoca a Edge Function
 SELECT cron.schedule(
     'dispatch-reports-hourly',
     '0 * * * *', -- A cada hora certa (ex: 09:00 UTC, 10:00 UTC, etc.)
-    $$
-    DO $$
-    DECLARE
-        v_secret text;
-    BEGIN
-        -- Obter o segredo cifrado no Supabase Vault
-        SELECT decrypted_secret INTO v_secret
-        FROM vault.decrypted_secrets
-        WHERE name = 'scheduled_function_secret'
-        LIMIT 1;
-
-        IF v_secret IS NOT NULL THEN
-            PERFORM net.http_post(
-                url := 'https://<PROJECT_REF>.supabase.co/functions/v1/dispatch-scheduled-reports',
-                headers := jsonb_build_object(
-                    'Content-Type', 'application/json',
-                    'X-Scheduled-Secret', v_secret
-                ),
-                body := '{}'::jsonb
-            );
-        ELSE
-            RAISE WARNING 'Segredo "scheduled_function_secret" não encontrado em vault.decrypted_secrets';
-        END IF;
-    END;
-    $$;
-    $$
+    $cron$
+    SELECT net.http_post(
+        url := 'https://<PROJECT_REF>.supabase.co/functions/v1/dispatch-scheduled-reports',
+        headers := jsonb_build_object(
+            'Content-Type', 'application/json',
+            'X-Scheduled-Secret', (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'scheduled_function_secret' LIMIT 1)
+        ),
+        body := '{}'::jsonb
+    );
+    $cron$
 );
 
 -- 4. Consultas para verificação do estado do agendamento
