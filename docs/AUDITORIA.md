@@ -91,6 +91,22 @@ npm run dev
 
 ---
 
-## 6. Conclusão e Prontidão de Entrega
+## 6. Estado Factual e Prontidão Operacional
 
-O sistema ClientPulse AI encontra-se integralmente testado, seguro e conforme com todos os requisitos do projeto. A conformidade com os princípios de minimização de dados, encriptação em repouso e isolamento multi-inquilino garante uma operação fiável e profissional.
+A auditoria ao código e arquitetura do ClientPulse AI reflete o estado factual das implementações e salvaguardas antes do teste real:
+
+1. **Políticas de CORS e Exposição de Endpoints:**
+   - As Edge Functions com acesso privilegiado ou autenticado (`generate-report`, `approve-and-send`, `github-sync`, `onboarding-chat`, `dispatch-scheduled-reports`) possuem cabeçalhos CORS estritamente restritos à origem canónica da aplicação (`ALLOWED_ORIGIN` ou `APP_URL`).
+   - Apenas o endpoint público de consulta do portal (`client-portal-data` / RPC de portal por token) permite `Access-Control-Allow-Origin: *` para viabilizar o acesso seguro e sem login a partir de navegadores dos clientes finais.
+
+2. **Testes de Isolamento Multi-Inquilino (RLS):**
+   - Os testes de isolamento de Row Level Security (`supabase/tests/rls_isolation_test.sql`) foram executados com sucesso em ambiente de produção (10/10 testes passaram a 14/11/2026).
+   - O conjunto de testes foi expandido para cobrir as novas garantias (migrações 009 a 013, incluindo a proibição de leitura direta do PAT pelo role `authenticated` e o isolamento e imutabilidade dos `audit_logs`), devendo ser reexecutado após a aplicação remota de todas as migrações.
+
+3. **Registo do Incidente de 14/11 e Resolução de Acesso a Credenciais:**
+   - **Incidente:** Após a aplicação da migração 010 (`010_restrict_pat_access.sql`), a restrição a nível de coluna (CLS) revogou o acesso SELECT do role `authenticated` às colunas `pat_token` e `pat_token_encrypted`. Como consequência, as funções `generate-report` e `github-sync` falharam temporariamente em produção ao tentar ler o PAT através do cliente associado ao utilizador final (`createUserClient`).
+   - **Correção:** No commit `0990cd7`, a autorização do utilizador e a validação de pertença do cliente à agência foram mantidas estritamente sob o cliente do utilizador (impondo RLS). A leitura exclusiva das colunas do PAT passou a ser realizada com o cliente de administração (`createAdminClient()`), filtrada unicamente pelo `agency_id` previamente validado pela RLS. Nunca é aceite um `agency_id` proveniente do corpo do pedido HTTP.
+
+4. **Limitações e Riscos Operacionais em Aberto:**
+   - **Deteção de Abertura de E-mails:** O pixel de tracking transparente (1x1 GIF) e os webhooks de abertura do Resend são **indicativos**. Políticas agressivas de privacidade de clientes de correio eletrónico (tais como o Apple Mail Privacy Protection ou proxies de segurança corporativos que descarregam imagens antecipadamente) podem gerar falsos positivos ou mascarar aberturas reais.
+   - **Verificação de Domínio no Resend:** O envio em produção depende de um domínio próprio verificado no Resend com registos SPF/DKIM configurados. No ambiente de testes ou em modo sandbox (`onboarding@resend.dev`), os e-mails só podem ser entregues ao endereço de correio eletrónico registado na conta Resend do programador.
