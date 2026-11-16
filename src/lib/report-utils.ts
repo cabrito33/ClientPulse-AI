@@ -1,5 +1,37 @@
 import type { ReportSection } from "@/data/types";
 
+export const REPORT_HEADINGS = {
+  done: "## O que foi feito",
+  blocks: "## Bloqueios e pontos de atenção",
+  next: "## Próximos passos e decisões",
+};
+
+/**
+ * Serializes report sections into markdown without trimming active trailing spaces.
+ * Empty or purely whitespace items are omitted from output markdown.
+ */
+export function serializeReportSections(s: ReportSection, intro?: string): string {
+  const bullets = (items: string[]) =>
+    items
+      .filter((i) => i.trim().length > 0)
+      .map((i) => `- ${i.replace(/^(\s*[-*•◦▪]\s*)+/, "")}`)
+      .join("\n");
+  const blocks = [
+    REPORT_HEADINGS.done,
+    bullets(s.done),
+    "",
+    REPORT_HEADINGS.blocks,
+    bullets(s.blocks),
+    "",
+    REPORT_HEADINGS.next,
+    bullets(s.next),
+  ];
+  if (intro) {
+    return [intro, "", ...blocks].join("\n");
+  }
+  return blocks.join("\n");
+}
+
 /**
  * Strips leading bullet markers (•, -, *, ◦, ▪) and excess whitespace from a line.
  */

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition, useRef, useCallback, useEffect } from "react";
+import { useState, useTransition, useRef, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -20,7 +20,7 @@ import type { Client, Report, ReportSection } from "@/data/types";
 import { Badge } from "@/components/ui/badge";
 import { buttonClass } from "@/components/ui/button";
 import { cn, formatDateTime } from "@/lib/utils";
-import { parseBodyToSections } from "@/lib/report-utils";
+import { parseBodyToSections, serializeReportSections } from "@/lib/report-utils";
 import {
   approveAndSendAction,
   resendReportAction,
@@ -35,12 +35,6 @@ function parseBodyFallback(body: string, fallback: ReportSection): ReportSection
 
 type SendState = "pending" | "sent" | "failed";
 
-const headings = {
-  done: "## O que foi feito",
-  blocks: "## Bloqueios e pontos de atenção",
-  next: "## Próximos passos e decisões",
-};
-
 export function ReportReview({
   report,
   client,
@@ -52,6 +46,16 @@ export function ReportReview({
 }) {
   const router = useRouter();
   const [body, setBody] = useState(report.body);
+  const [sections, setSections] = useState<ReportSection>(() => {
+    const raw = parseBodyFallback(report.body, report.sections);
+    const cleanList = (list: string[]) =>
+      list.map((i) => i.replace(/^(\s*[-*•◦▪]\s*)+/, "").trim()).filter(Boolean);
+    return {
+      done: cleanList(raw.done),
+      blocks: cleanList(raw.blocks),
+      next: cleanList(raw.next),
+    };
+  });
   const [state, setState] = useState<SendState>(
     report.status === "sent" ? "sent" : report.status === "failed" ? "failed" : "pending"
   );
@@ -68,16 +72,6 @@ export function ReportReview({
     }
   }, [report.id, report.reviewOpenedAt]);
 
-  const parsed = useMemo<ReportSection>(() => {
-    const raw = parseBodyFallback(body, report.sections);
-    const cleanList = (list: string[]) =>
-      list.map((i) => i.replace(/^(\s*[-*•◦▪]\s*)+/, "").trim()).filter(Boolean);
-    return {
-      done: cleanList(raw.done),
-      blocks: cleanList(raw.blocks),
-      next: cleanList(raw.next),
-    };
-  }, [body, report.sections]);
   const dirty = body !== report.body;
   const wordCount = body.trim().split(/\s+/).filter(Boolean).length;
 
@@ -87,24 +81,39 @@ export function ReportReview({
   }
 
   function updateSection(key: keyof ReportSection, index: number, value: string) {
-    const next = { ...parsed, [key]: parsed[key].map((v, i) => (i === index ? value : v)) };
-    setBody(serialize(next, currentIntro()));
+    const next = { ...sections, [key]: sections[key].map((v, i) => (i === index ? value : v)) };
+    setSections(next);
+    setBody(serializeReportSections(next, currentIntro()));
   }
 
   function addItem(key: keyof ReportSection) {
-    const next = { ...parsed, [key]: [...parsed[key], ""] };
-    setBody(serialize(next, currentIntro()));
+    const next = { ...sections, [key]: [...sections[key], ""] };
+    setSections(next);
+    setBody(serializeReportSections(next, currentIntro()));
   }
 
   function removeItem(key: keyof ReportSection, index: number) {
-    const next = { ...parsed, [key]: parsed[key].filter((_, i) => i !== index) };
-    setBody(serialize(next, currentIntro()));
+    const next = { ...sections, [key]: sections[key].filter((_, i) => i !== index) };
+    setSections(next);
+    setBody(serializeReportSections(next, currentIntro()));
+  }
+
+  function handleDiscard() {
+    setBody(report.body);
+    const raw = parseBodyFallback(report.body, report.sections);
+    const cleanList = (list: string[]) =>
+      list.map((i) => i.replace(/^(\s*[-*•◦▪]\s*)+/, "").trim()).filter(Boolean);
+    setSections({
+      done: cleanList(raw.done),
+      blocks: cleanList(raw.blocks),
+      next: cleanList(raw.next),
+    });
   }
 
   function approve() {
     const hasNoTasks =
       (report.tasksPlanned === 0 && report.tasksCompleted === 0) ||
-      (parsed.done.length === 0 && parsed.blocks.length === 0 && parsed.next.length === 0);
+      (sections.done.length === 0 && sections.blocks.length === 0 && sections.next.length === 0);
 
     if (hasNoTasks) {
       const confirmed = window.confirm("Este relatório não tem tarefas. Enviar mesmo assim?");
@@ -249,7 +258,7 @@ export function ReportReview({
           </Link>
           <button
             type="button"
-            onClick={() => setBody(report.body)}
+            onClick={handleDiscard}
             disabled={!dirty || isPending}
             className={buttonClass("secondary", "sm")}
           >
@@ -374,6 +383,11 @@ export function ReportReview({
             <p className="mt-0.5 text-[12px] text-muted">
               {error || "O envio falhou. Tenta de novo e, se continuar, verifica o e-mail do cliente"}
             </p>
+            {error?.includes("Resend só permite enviar para o e-mail da tua conta") && (
+              <p className="mt-1 text-[11.5px] text-muted-soft">
+                Dica: Enquanto usas o remetente de teste do Resend, define o e-mail do cliente com o mesmo e-mail da tua conta Resend. Para enviar para clientes externos, verifica um domínio próprio em <a href="https://resend.com/domains" target="_blank" rel="noreferrer" className="underline hover:text-ink">resend.com/domains</a>.
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -447,7 +461,7 @@ export function ReportReview({
                 tone="done"
                 title="O que foi feito"
                 hint="Conquistas em linguagem de negócio."
-                items={parsed.done}
+                items={sections.done}
                 onChange={(i, v) => updateSection("done", i, v)}
                 onAdd={() => addItem("done")}
                 onRemove={(i) => removeItem("done", i)}
@@ -456,7 +470,7 @@ export function ReportReview({
                 tone="block"
                 title="Bloqueios e pontos de atenção"
                 hint="O que impede o progresso e o que precisas do cliente."
-                items={parsed.blocks}
+                items={sections.blocks}
                 onChange={(i, v) => updateSection("blocks", i, v)}
                 onAdd={() => addItem("blocks")}
                 onRemove={(i) => removeItem("blocks", i)}
@@ -465,7 +479,7 @@ export function ReportReview({
                 tone="next"
                 title="Próximos passos e decisões"
                 hint="O que acontece a seguir e o que é preciso decidir."
-                items={parsed.next}
+                items={sections.next}
                 onChange={(i, v) => updateSection("next", i, v)}
                 onAdd={() => addItem("next")}
                 onRemove={(i) => removeItem("next", i)}
@@ -479,7 +493,14 @@ export function ReportReview({
             </summary>
             <textarea
               value={body}
-              onChange={(e) => setBody(e.target.value)}
+              onChange={(e) => {
+                const nextBody = e.target.value;
+                setBody(nextBody);
+                const parsedFromRaw = parseBodyToSections(nextBody);
+                if (parsedFromRaw) {
+                  setSections(parsedFromRaw);
+                }
+              }}
               disabled={state === "sent"}
               rows={16}
               spellCheck={false}
@@ -718,27 +739,4 @@ function BlockEditor({
       </button>
     </div>
   );
-}
-
-function serialize(s: ReportSection, intro?: string): string {
-  const bullets = (items: string[]) =>
-    items
-      .map((i) => i.replace(/^(\s*[-*•◦▪]\s*)+/, "").trim())
-      .filter(Boolean)
-      .map((i) => `- ${i}`)
-      .join("\n");
-  const blocks = [
-    headings.done,
-    bullets(s.done),
-    "",
-    headings.blocks,
-    bullets(s.blocks),
-    "",
-    headings.next,
-    bullets(s.next),
-  ];
-  if (intro) {
-    return [intro, "", ...blocks].join("\n");
-  }
-  return blocks.join("\n");
 }
