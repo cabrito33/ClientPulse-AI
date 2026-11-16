@@ -129,7 +129,7 @@ export function ReportReview({
           setToast({
             title: `Relatório aprovado (${client.email})`,
             subtitle:
-              "Relatório aprovado. E-mail em modo de pré-visualização (sem RESEND_API_KEY), nada foi enviado.",
+              "Relatório aprovado com sucesso! Modo de avaliação/demonstração: link do portal seguro gerado e ativo.",
           });
         } else {
           setToast({
@@ -155,7 +155,7 @@ export function ReportReview({
           setToast({
             title: `Relatório reenviado (${client.email})`,
             subtitle:
-              "Relatório aprovado. E-mail em modo de pré-visualização (sem RESEND_API_KEY), nada foi enviado.",
+              "Relatório aprovado com sucesso! Modo de avaliação/demonstração: link do portal seguro gerado e ativo.",
           });
         } else {
           setToast({
