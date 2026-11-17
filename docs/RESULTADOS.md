@@ -35,6 +35,12 @@
 
 ---
 
+### Evidência operacional agregada — leitura de produção em 17/11/2026
+
+A leitura agregada da base de dados registou **9 relatórios** (6 com estado `sent`, 2 `failed`, 1 `draft`), dos quais 2 tinham `opened_at`, e dois registos de onboarding com duração. O job de agendamento horário encontrava-se ativo. Os logs de entrega continham falhas relacionadas com restrições de domínio/remetente do Resend.
+
+Estas são **observações operacionais**, não prova de receção de e-mail na caixa de entrada, de dois ciclos de validação nem de poupança de tempo. Não publicar dados pessoais nem tokens.
+
 ## 1. Consultas SQL para Extração das Métricas
 
 Execute as seguintes consultas no **SQL Editor** do Supabase para recolher os dados reais agregados e detalhados. Os resultados obtidos devem ser transcritos para as tabelas das secções seguintes.
