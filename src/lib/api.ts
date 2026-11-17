@@ -613,13 +613,20 @@ export async function getPortalData(
     const metrics = (payload.metrics ?? []).map(mapSprintMetric);
     const current = reports[0] ?? null;
 
-    // Automatically record first open on portal access (idempotent, BE-21)
-    if (current && !current.openedAt) {
+    // Only record a first opening for SENT reports after validating this portal token.
+    // Do not call the unrestricted record_report_open(id) RPC from a public route.
+    if (current?.status === "sent" && !current.openedAt) {
       try {
-        await recordReportOpen(current.id);
-        current.openedAt = new Date().toISOString();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const recorded: any = await (supabase.rpc as any)("record_portal_report_open", {
+          p_token: token,
+          p_report_id: current.id,
+        });
+        if (!recorded.error && recorded.data?.opened_at) {
+          current.openedAt = recorded.data.opened_at;
+        }
       } catch {
-        // Ignore error to avoid blocking portal rendering
+        // A telemetry failure must not block a valid portal view.
       }
     }
 
@@ -631,37 +638,9 @@ export async function getPortalData(
     };
   }
 
-  // Graceful fallback (if RPC is not yet deployed on database)
-  const clientRes = await supabase
-    .from("clients")
-    .select("*")
-    .eq("portal_token", token)
-    .maybeSingle();
-
-  if (clientRes.error || !clientRes.data) return null;
-  const client = mapClient(clientRes.data as ClientRow);
-
-  const [history, metrics] = await Promise.all([
-    getReportsForClient(client.id),
-    getSprintMetrics(client.id),
-  ]);
-
-  const current = history[0] ?? null;
-  if (current && !current.openedAt) {
-    try {
-      await recordReportOpen(current.id);
-      current.openedAt = new Date().toISOString();
-    } catch {
-      // Ignore error to avoid blocking portal rendering
-    }
-  }
-
-  return {
-    client,
-    current,
-    history,
-    metrics,
-  };
+  // Fail closed on RPC errors; never bypass token expiry/revocation with a direct table query.
+  console.error('[api] Public portal RPC unavailable:', rpcRes.error?.message);
+  return null;
 }
 
 /**
