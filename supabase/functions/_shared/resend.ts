@@ -29,6 +29,14 @@ export interface SendReportEmailOptions {
   language?: 'pt' | 'en';
 }
 
+/** Escape untrusted user content in email markup. */
+function escapeHtml(value: string): string {
+  const chars: Record<string, string> = {
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  };
+  return value.replace(/[&<>"']/g, (char) => chars[char]);
+}
+
 /**
  * Builds a clean, responsive HTML email body with the 3 blocks and portal link.
  */
@@ -71,7 +79,7 @@ export function buildReportEmailHtml(options: SendReportEmailOptions): string {
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line.length > 0)
-      .map((line) => `<p style="margin: 0 0 8px 0; line-height: 1.5; color: #374151;">${line}</p>`)
+      .map((line) => `<p style="margin: 0 0 8px 0; line-height: 1.5; color: #374151;">${escapeHtml(line)}</p>`)
       .join('');
   };
 
@@ -93,16 +101,16 @@ export function buildReportEmailHtml(options: SendReportEmailOptions): string {
           <tr>
             <td style="background-color: #0f172a; padding: 28px 32px; text-align: left;">
               <h1 style="margin: 0; font-size: 20px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px;">ClientPulse AI</h1>
-              <p style="margin: 4px 0 0 0; font-size: 14px; color: #94a3b8;">${labels.subtitle}</p>
+              <p style="margin: 4px 0 0 0; font-size: 14px; color: #94a3b8;">${escapeHtml(labels.subtitle)}</p>
             </td>
           </tr>
 
           <!-- Greeting -->
           <tr>
             <td style="padding: 28px 32px 16px 32px;">
-              <h2 style="margin: 0; font-size: 18px; color: #111827;">Olá, ${options.clientName}!</h2>
+              <h2 style="margin: 0; font-size: 18px; color: #111827;">Olá, ${escapeHtml(options.clientName)}!</h2>
               <p style="margin: 8px 0 0 0; font-size: 14px; color: #4b5563; line-height: 1.5;">
-                ${isPt ? `Aqui está o resumo executivo dos desenvolvimentos realizados para o projeto <strong>${displayProject}</strong> esta semana.` : `Here is the executive summary of the deliverables completed for project <strong>${displayProject}</strong> this week.`}
+                ${isPt ? `Aqui está o resumo executivo dos desenvolvimentos realizados para o projeto <strong>${escapeHtml(displayProject)}</strong> esta semana.` : `Here is the executive summary of the deliverables completed for project <strong>${escapeHtml(displayProject)}</strong> this week.`}
               </p>
             </td>
           </tr>
@@ -143,7 +151,7 @@ export function buildReportEmailHtml(options: SendReportEmailOptions): string {
               <table border="0" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="center" style="border-radius: 8px; background-color: #0f172a;">
-                    <a href="${portalUrl}" target="_blank" style="display: inline-block; padding: 14px 28px; font-size: 15px; font-weight: 600; color: #ffffff; text-decoration: none; border-radius: 8px;">
+                    <a href="${escapeHtml(portalUrl)}" target="_blank" style="display: inline-block; padding: 14px 28px; font-size: 15px; font-weight: 600; color: #ffffff; text-decoration: none; border-radius: 8px;">
                       ${labels.ctaText} &rarr;
                     </a>
                   </td>
@@ -167,7 +175,7 @@ export function buildReportEmailHtml(options: SendReportEmailOptions): string {
           <!-- Open Tracking Pixel (BE-21) -->
           <tr>
             <td style="display:none !important;visibility:hidden;mso-hide:all;font-size:1px;color:#ffffff;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
-              <img src="${trackingPixelUrl}" width="1" height="1" alt="" style="display:none;width:1px;height:1px;border:0;" />
+              <img src="${escapeHtml(trackingPixelUrl)}" width="1" height="1" alt="" style="display:none;width:1px;height:1px;border:0;" />
             </td>
           </tr>
 
@@ -192,19 +200,13 @@ export async function sendReportEmail(options: SendReportEmailOptions): Promise<
     ? `Weekly Progress Report — ${options.companyName || options.clientName} (${options.periodEnd})`
     : `Relatório Semanal de Progresso — ${options.companyName || options.clientName} (${options.periodEnd})`;
 
-  // If no API key is provided, or if explicitly in mock mode:
+  // Never silently mark a mock delivery as a real send.
   if (!apiKey || apiKey === 'mock' || apiKey.includes('your-resend-api-key')) {
-    console.log('----------------------------------------------------');
-    console.log('[MOCK EMAIL MODE ACTIVATED]');
-    console.log(`To: ${options.toEmail}`);
-    console.log(`From: ${fromEmail}`);
-    console.log(`Subject: ${subject}`);
-    console.log(`Portal Link: ${(options.appUrl || 'http://localhost:3000')}/portal/${options.portalToken}`);
-    console.log('----------------------------------------------------');
-    return {
-      id: `mock_email_${Date.now()}`,
-      mock: true,
-    };
+    if (Deno.env.get('ALLOW_MOCK_EMAILS') !== 'true') {
+      throw new Error('RESEND_API_KEY não configurada; envio real indisponível. Configure um domínio verificado.');
+    }
+    console.warn('[resend] Simulated delivery (ALLOW_MOCK_EMAILS=true). No email was sent.');
+    return { id: `mock_email_${Date.now()}`, mock: true };
   }
 
   // Real HTTP dispatch to Resend
@@ -233,15 +235,8 @@ export async function sendReportEmail(options: SendReportEmailOptions): Promise<
         lower.includes("testing emails") ||
         lower.includes("validation_error"));
 
-    // Fallback gracioso para modo de avaliação/demonstração quando não existe domínio verificado
     if (isSandboxDomainRestriction) {
-      console.warn(
-        `[resend] Sandbox domain restriction detected for ${options.toEmail}. Falling back to evaluation mock delivery.`
-      );
-      return {
-        id: `mock_sandbox_${Date.now()}`,
-        mock: true,
-      };
+      throw new Error('O Resend recusou o envio: remetente/domínio não verificado ou destinatário fora das regras de sandbox. Configure RESEND_FROM_EMAIL com um domínio verificado.');
     }
 
     throw new Error(`Resend API Error (HTTP ${response.status}): ${errorBody}`);
