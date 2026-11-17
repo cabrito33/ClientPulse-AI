@@ -9,7 +9,7 @@
 
 ## 1. Resumo Executivo da Auditoria
 
-O projeto **ClientPulse AI** atingiu a maturidade técnica necessária para entrega e operação em produção. Todas as vulnerabilidades e incongruências identificadas nas fases preliminares foram integralmente resolvidas através de alterações cirúrgicas, sem regressões de design nem de arquitetura.
+O projeto **ClientPulse AI** atingiu a maturidade técnica necessária para entrega e operação em produção. Uma revisão complementar em 17/11/2026 identificou riscos de permissões SQL, exposição de dados no portal e simulação de envios no Resend. Foi aplicada uma migração em produção para restringir funções e limitar a publicação do portal. As correções ao frontend e ao motor de e-mail carecem de revisão, testes e deploy.
 
 ### Resumo dos Resultados
 - **Integridade do Build e Lint:** 100% dos testes e verificações estáticas (`npm run lint`, `npx tsc --noEmit`, `npm run check:use-server`, `npm test` e `next build`) passam com zero erros e zero avisos bloqueantes.
@@ -20,6 +20,14 @@ O projeto **ClientPulse AI** atingiu a maturidade técnica necessária para entr
 - **Consistência de Datas e Rótulos:** O cálculo do identificador da semana (`buildWeekLabel`) baseia-se na data de fecho do período (`end`), garantindo sincronismo entre o dashboard, ecrã de revisão, e-mail, portal e trigger de métricas de sprint.
 
 ---
+
+### Adenda — Verificação de produção de 17/11/2026
+
+- A migração `20261117201502_secure_rpc_portal_and_privileges` foi aplicada em produção: restringe `EXECUTE` nas funções privilegiadas, introduz `record_portal_report_open` validada por token e limita os dados publicados a relatórios `sent`.
+- O número de funções `SECURITY DEFINER` diretamente executáveis pelo papel `anon` passou de **13** para **3**; as restantes três suportam o portal sem login e devem manter validação estrita de token.
+- O portal deixou de disponibilizar `raw_github_data` e identificadores de entrega na RPC.
+- Foram observados problemas com o remetente de e-mail no Resend. A alteração ao código remove a simulação automática de envios recusados, mas o domínio deve ser confirmado no próprio Resend.
+- **Ainda não são garantias de segurança total:** falta teste E2E do portal, revisão de três avisos de `search_path`, e o aviso de proteção contra palavras-passe comprometidas continua ativo. Avaliar os avisos do [Supabase Database Linter](https://supabase.com/docs/guides/database/database-linter).
 
 ## 2. Checklist de Segurança e Proteção de Dados
 
