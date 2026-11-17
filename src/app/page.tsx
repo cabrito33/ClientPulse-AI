@@ -255,28 +255,28 @@ const steps = [
     icon: Plug,
     title: "Ligas o GitHub Projects",
     body: "O assistente guia-te na ligação e no mapeamento das colunas do board para «Concluído», «Em curso» e «Bloqueado».",
-    link: { href: "/onboarding", label: "Experimentar o assistente" },
+    link: { href: "/register", label: "Começar a configuração" },
   },
   {
     n: "02",
     icon: Sparkles,
     title: "A IA escreve o rascunho",
     body: "A partir dos metadados das tarefas — nunca do código — sai um relatório em três blocos, no tom e idioma de cada cliente.",
-    link: { href: "/dashboard/reports/rpt-atelier-w42", label: "Ver um rascunho" },
+    link: { href: "/register", label: "Gerar o primeiro relatório" },
   },
   {
     n: "03",
     icon: Check,
     title: "Revês e aprovas",
     body: "Ajustas uma frase, confirmas os números e clicas em «Aprovar e enviar». Ou desligas a aprovação e deixas correr sozinho.",
-    link: { href: "/dashboard", label: "Abrir o dashboard" },
+    link: { href: "/register", label: "Aceder à aplicação" },
   },
   {
     n: "04",
     icon: Mail,
     title: "O cliente recebe",
     body: "Um e-mail com o resumo e um link seguro para o portal: relatório da semana, histórico e gráfico de tarefas por sprint. Sem conta.",
-    link: { href: "/portal/demo-abc123", label: "Abrir o portal do cliente" },
+    link: { href: "#faq", label: "Saber mais sobre o portal" },
   },
 ];
 
@@ -289,8 +289,8 @@ function HowItWorks() {
             <Eyebrow>Como funciona</Eyebrow>
             <SectionTitle>Quatro passos. Uma sexta-feira tranquila.</SectionTitle>
           </div>
-          <ButtonLink href="/onboarding" variant="secondary" size="sm" className="shrink-0">
-            Ver demonstração
+          <ButtonLink href="/register" variant="secondary" size="sm" className="shrink-0">
+            Começar agora
             <ArrowRight className="h-3.5 w-3.5" />
           </ButtonLink>
         </div>
@@ -611,8 +611,8 @@ const plans = [
       "Portal do cliente com histórico",
       "Assistente de onboarding",
     ],
-    cta: "Ver demo",
-    href: "/dashboard",
+    cta: "Criar conta",
+    href: "/register",
     featured: false,
   },
   {
@@ -627,8 +627,8 @@ const plans = [
       "Envio automático por cliente",
       "Suporte prioritário",
     ],
-    cta: "Ver demo",
-    href: "/dashboard",
+    cta: "Criar conta",
+    href: "/register",
     featured: true,
   },
 ];
@@ -642,7 +642,7 @@ function Pricing() {
           <SectionTitle>Preços de partida. Não de promessa.</SectionTitle>
           <SectionLead>
             Estes valores são hipóteses baseadas nos preços da concorrência e ainda não foram
-            testados com utilizadores. Não há pagamentos neste protótipo.
+            testados com utilizadores. Não existem pagamentos integrados neste MVP.
           </SectionLead>
         </div>
 
