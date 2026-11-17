@@ -132,8 +132,8 @@ function Hero() {
             aprovas antes de sair.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <ButtonLink href="/onboarding" size="lg" className="group">
-              Ver demo
+            <ButtonLink href="/register" size="lg" className="group">
+              Criar conta
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </ButtonLink>
             <ButtonLink href="#como-funciona" variant="secondary" size="lg">
@@ -143,7 +143,7 @@ function Hero() {
 
           <dl className="mt-10 grid max-w-md grid-cols-3 gap-4 border-t border-line pt-6">
             {[
-              { v: "< 5 min", k: "do onboarding ao 1.º relatório" },
+              { v: "5 min", k: "meta de onboarding" },
               { v: "3 blocos", k: "feito · bloqueios · próximos" },
               { v: "0 logins", k: "para o teu cliente" },
             ].map((s) => (
@@ -392,7 +392,7 @@ function Features() {
 
         <p className="mt-8 flex items-center gap-2 text-[12px] text-muted">
           <CircleDashed className="h-3.5 w-3.5" aria-hidden="true" />
-          Protótipo navegável com dados de demonstração. Sem integrações reais nesta fase.
+          MVP com integração GitHub Projects e IA. O envio por e-mail requer um remetente verificado no Resend.
         </p>
       </div>
     </section>
@@ -745,7 +745,7 @@ const faqs = [
   },
   {
     q: "Isto já funciona com o meu GitHub?",
-    a: "Nesta fase é um protótipo navegável com dados simulados. A integração real com a API do GitHub, o modelo de IA e o envio de e-mail são os próximos passos do roadmap.",
+    a: "Sim. O MVP liga-se ao GitHub Projects com um Personal Access Token (PAT) e gera rascunhos com IA. O envio de e-mails requer um domínio/remetente verificado no Resend.",
   },
 ];
 
@@ -877,21 +877,21 @@ function FinalCta() {
             A próxima sexta-feira pode terminar às 17h00.
           </h2>
           <p className="mx-auto mt-4 max-w-lg text-[15px] leading-relaxed text-paper/65">
-            Percorre o protótipo completo — onboarding, dashboard, revisão de rascunho e portal do
-            cliente — com dados de demonstração.
+            Cria a tua conta e configura o GitHub Projects para gerar e rever relatórios reais.
+            O envio depende das credenciais e do remetente configurados.
           </p>
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-            <ButtonLink href="/onboarding" size="lg">
-              Começar a demo
+            <ButtonLink href="/register" size="lg">
+              Começar agora
               <ArrowRight className="h-4 w-4" />
             </ButtonLink>
             <ButtonLink
-              href="/portal/demo-abc123"
+              href="#como-funciona"
               size="lg"
               variant="secondary"
               className="border-paper/20 bg-transparent text-paper hover:border-paper/40 hover:bg-paper/10"
             >
-              Ver portal do cliente
+              Conhecer o funcionamento
             </ButtonLink>
           </div>
         </div>
