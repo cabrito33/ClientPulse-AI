@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD) — ClientPulse AI
 
 **Projeto:** ClientPulse AI — Relatórios Semanais de Progresso para Freelancers e Agências  
-**Equipa:** [Nome da Equipa / Elementos da Equipa]  
-**Repositório GitHub:** `[Link para o Repositório]` (Adicionado `diogocosme` como colaborador)  
+**Equipa:** Elementos a confirmar pela equipa antes da entrega  
+**Repositório GitHub:** https://github.com/cabrito33/ClientPulse-AI  
 **Versão:** 2.0 (Alinhado com o Relatório de Validação)  
 
 ---
@@ -73,7 +73,7 @@ O cliente recebe um e-mail profissional com a síntese e um link seguro de acess
 - **Quero** ligar a minha conta e selecionar o meu GitHub Project,
 - **Para que** o sistema consiga extrair automaticamente as tarefas concluídas, bloqueadas e em curso.
 - **Critérios de Aceitação:**
-  - O utilizador pode autenticar-se via OAuth ou Personal Access Token (PAT).
+  - A integração GitHub Projects utiliza Personal Access Token (PAT) cifrado; OAuth fica para evolução futura.
   - O sistema lista os projetos disponíveis e permite selecionar o board pretendido.
   - O utilizador consegue mapear quais as colunas do board correspondem a "Concluído", "Em Curso" e "Bloqueado".
 
@@ -184,7 +184,7 @@ O cliente recebe um e-mail profissional com a síntese e um link seguro de acess
 ## 10. Calendário e Milestones (5 Semanas)
 
 - **Semana 1: Alinhamento, Pesquisa e PRD (Concluído)**
-  - Validação de mercado, consolidação do PRD e criação da pasta `/docs` no repositório GitHub (`/docs/PRD.md` e `/docs/RESEARCH.md`).
+  - Validação de mercado, consolidação do PRD e criação da pasta `/docs` no repositório GitHub (`/docs/PRD.md` e `/docs/RELATORIO_VALIDACAO.md`).
   - Configuração do GitHub Project da equipa com os campos customizados obrigatoriamente exigidos (*Priority*, *Status*, *Size*).
 
 - **Semana 2: Integração com GitHub API & Engine de IA**
