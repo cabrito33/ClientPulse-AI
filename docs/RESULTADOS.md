@@ -1,12 +1,37 @@
 # Resultados e Validação de Métricas — ClientPulse AI
 
 **Projeto:** ClientPulse AI — Relatórios Semanais de Progresso para Freelancers e Agências  
-**Documento:** Template de Registo e Validação de Métricas Reais do MVP  
+**Documento:** Registo de evidências e métricas do MVP — resultados operacionais por confirmar  
 **Referência:** PRD v2.0 (Secção 7: Métricas de Sucesso e Critérios de Falha) e `docs/TESTE_REAL.md`  
 **Data de Execução dos Testes:** `[ A preencher: DD/MM/AAAA ]`  
 **Responsável pelo Teste:** `[ A preencher: Nome / Equipa ]`  
 **Ambiente de Execução:** `[ A preencher: Ex.: Supabase Cloud (rewurbzemhydcqhmornx) + Vercel ]`  
 **Repositório / Quadro de Teste:** `[ A preencher: Repositório GitHub e ID do ProjectV2 ]`  
+
+---
+
+## 0. Estado da validação — verificação documental em 17/11/2026
+
+> **Estado: resultados de utilização real não comprovados nesta documentação.** Uma funcionalidade implementada, um teste automatizado aprovado ou uma issue encerrada **não equivale** a uma medição observada em produção. Não preencher valores nem declarar metas atingidas sem evidência.
+
+| Fonte verificada | O que comprova | O que não comprova |
+| :--- | :--- | :--- |
+| [CI de 17/11/2026](https://github.com/cabrito33/ClientPulse-AI/actions/runs/44119261217) — `70e5d81`, concluído com sucesso | Passagem das verificações automatizadas configuradas no workflow (lint, tipos, testes e build). | Dois envios reais, tempos de onboarding, precisão da IA ou poupança de tempo dos utilizadores. |
+| [Issue DO-03 #37](https://github.com/cabrito33/ClientPulse-AI/issues/37), encerrada em 15/11/2026 | A equipa marcou a tarefa de dois ciclos de teste como concluída. | Os critérios de aceitação continuam sem assinalar na descrição; não existem comentários nem valores de medição associados à issue. |
+| [Roteiro de teste real](./TESTE_REAL.md) e este registo | Estão preparados os passos e as consultas para recolher evidências. | A execução efetiva dos ciclos ou o cumprimento das metas do PRD. |
+
+**Situação a confirmar com a equipa:** a issue DO-03 está encerrada, mas o README indicava os ciclos por realizar e este ficheiro não continha resultados preenchidos. Confirmar se os testes ocorreram e, nesse caso, registar datas, identificadores e evidências anonimizadas. Não reabrir nem dar a tarefa por executada apenas por causa deste documento.
+
+### Evidências mínimas a recolher (sem publicar segredos)
+
+- [ ] **Ciclo 1 — aprovação manual:** data, cliente de teste anonimizado, ID do relatório, estado final, tempo de revisão, número de edições, comprovativo de entrega de e-mail e acesso ao portal.
+- [ ] **Ciclo 2 — envio automático:** data/hora programada e executada, ID do relatório, modo `auto_send_enabled`, estado de envio e resultado de uma segunda execução para verificar duplicações.
+- [ ] **Qualidade:** amostra de tarefas reais do GitHub Projects, correspondência com os três blocos do relatório, omissões e conteúdo não sustentado.
+- [ ] **Poupança de tempo:** medição cronometrada do mesmo cenário manualmente e com ClientPulse AI; calcular a diferença.
+- [ ] **Usabilidade:** número de participantes no onboarding e número de conclusões à primeira tentativa; feedback de quem recebe o relatório.
+- [ ] **Proveniência:** registar quem executou, quando, ambiente, captura/consulta e limitações dos resultados.
+
+**Privacidade:** não incluir chaves, PATs, tokens de portal válidos, links mágicos completos, credenciais, dados pessoais de clientes ou capturas de e-mails sem anonimização neste repositório público.
 
 ---
 
@@ -58,7 +83,6 @@ Verifica o ciclo de vida dos tokens de acesso e os prazos de expiração (garant
 ```sql
 SELECT 
     client_id,
-    token,
     is_active,
     expires_at,
     revoked_at,
@@ -71,23 +95,26 @@ ORDER BY created_at DESC;
 
 ## 2. Quadro Resumo de Métricas do PRD
 
-Registo comparativo entre os objetivos quantitativos definidos no **PRD v2.0** e os valores observados no teste real em produção.
+Registo comparativo entre as **metas** do PRD v2.0 e os **valores que terão de ser observados** no teste real. Até à recolha de dados, nenhuma meta deve ser classificada como atingida.
 
 | Métrica de Sucesso | Meta no PRD (Alvo) | Valor Real Observado | Estado (Atingido / Não Atingido) | Notas e Observações |
 | :--- | :--- | :--- | :--- | :--- |
-| **Tempo de Onboarding** | < 5 minutos (< 300 s) | `[ ]` segundos | `[ ]` | Medido entre `onboarding_started_at` e `onboarding_completed_at`. |
-| **Eficácia do Bot de Onboarding** | >= 85% de conclusão na 1.ª sessão | `[ ]` % | `[ ]` | Utilizadores que completaram o setup através do assistente conversacional. |
-| **Tempo de Preparação Semanal** | < 10 min por cliente/semana | `[ ]` minutos | `[ ]` | Tempo total incluindo geração, revisão e aprovação. |
-| **Tempo ativo de revisão** | < 2 minutos (< 120 s) | `[ ]` segundos | `[ ]` | Média de `time_to_approve_seconds` nos relatórios aprovados (calculado desde `review_opened_at` até `approved_at`, ignorando tempo parado). |
-| **Média de Edições por Rascunho** | < 3 linhas por rascunho | `[ ]` linhas | `[ ]` | Campo `avg_edit_count` na vista `success_metrics`. |
-| **Rascunhos com < 3 Edições** | >= 80% dos relatórios | `[ ]` % | `[ ]` | Campo `pct_approved_under_3_edits`. |
-| **Precisão da IA (Medição Manual)** | >= 80% das tarefas refletidas | `[ ]` % | `[ ]` | Tarefas do quadro representadas fielmente sem alucinações. |
-| **Taxa de Abertura em 24h** | >= 70% das mensagens enviadas | `[ ]` % | `[ ]` | Indicativo (rastreio de abertura via webhook / pixel). |
-| **Taxa de Fallback sem IA** | < 5% de falhas da IA | `[ ]` % | `[ ]` | Percentagem de relatórios gerados via modo determinístico. |
+| **Tempo de Onboarding** | < 5 minutos (< 300 s) | **Por medir** | **Não avaliado** | Medido entre `onboarding_started_at` e `onboarding_completed_at`. |
+| **Eficácia do Bot de Onboarding** | >= 85% de conclusão na 1.ª sessão | **Por medir** | **Não avaliado** | Utilizadores que completaram o setup através do assistente conversacional. |
+| **Tempo de Preparação Semanal** | < 10 min por cliente/semana | **Por medir** | **Não avaliado** | Tempo total incluindo geração, revisão e aprovação. |
+| **Tempo ativo de revisão** | < 2 minutos (< 120 s) | **Por medir** | **Não avaliado** | Média de `time_to_approve_seconds` nos relatórios aprovados (calculado desde `review_opened_at` até `approved_at`, ignorando tempo parado). |
+| **Média de Edições por Rascunho** | < 3 linhas por rascunho | **Por medir** | **Não avaliado** | Campo `avg_edit_count` na vista `success_metrics`. |
+| **Rascunhos com < 3 Edições** | >= 80% dos relatórios | **Por medir** | **Não avaliado** | Campo `pct_approved_under_3_edits`. |
+| **Precisão da IA (Medição Manual)** | >= 80% das tarefas refletidas | **Por medir** | **Não avaliado** | Tarefas do quadro representadas fielmente sem alucinações. |
+| **Taxa de Abertura em 24h** | >= 70% das mensagens enviadas | **Por medir** | **Não avaliado** | Indicativo (rastreio de abertura via webhook / pixel). |
+| **Taxa de Fallback sem IA** | < 5% de falhas da IA | **Por medir** | **Não avaliado** | Percentagem de relatórios gerados via modo determinístico. |
 
+**Como preencher:** acrescentar o valor, unidade, tamanho da amostra (`n`), período e fonte de evidência. `success_metrics` ajuda a extrair telemetria, mas não substitui a contagem manual de tarefas corretas nem um cronómetro para medir o processo completo. A eficácia do bot requer uma amostra de utilizadores identificada e contabilizada; aberturas de e-mail são indicativas e podem sofrer falsos positivos. Se uma métrica não for recolhível, registar **não medido** e explicar porquê.
 ---
 
 ## 3. Registo Detalhado por Ciclo Semanal
+
+**Estado documental em 17/11/2026:** não foram publicados aqui os identificadores, datas e comprovativos de execução. Os campos seguintes são fichas para preencher **após verificar eventos reais no Supabase/Resend e no GitHub Project**; não são resultados.
 
 ### 3.1 Ciclo 1: Modo de Aprovação Manual (Human-in-the-Loop)
 
@@ -152,15 +179,19 @@ $$\text{Precisão da IA} = \left( \frac{\text{Número de Tarefas Reais Fielmente
 
 ## 5. Análise de Redução de Tempo (Antes vs. Depois)
 
-Comparação do tempo despendido no processo de comunicação com o cliente:
+**Hipóteses ilustrativas, não resultados observados.** Os intervalos de tempo manual vêm das estimativas de trabalho do grupo e só podem ser usados como cenário de referência até serem cronometrados. A poupança real depende do tempo total de preparação, revisão e envio medido nos dois processos:
 
 | Etapa do Processo | Tempo Manual Tradicional (Sem ClientPulse) | Tempo com ClientPulse AI | Poupança Estimada |
 | :--- | :--- | :--- | :--- |
-| Recolha e triagem de tarefas no GitHub | 45 a 90 minutos | 0 minutos (automático via GraphQL) | ~ 100% |
-| Redação do texto em linguagem de negócio | 60 a 120 minutos | ~ 10 segundos (IA Gemini) | ~ 98% |
-| Formatação e composição do e-mail | 30 a 45 minutos | 0 minutos (template automático) | ~ 100% |
-| Revisão e envio pelo gestor | N/A | `[ ]` segundos | Processo reduzido a 1 clique |
-| **Tempo Total Semanal por Cliente** | **2,5 a 4,5 horas** | **`[ ]` minutos** | **> 85% de redução** |
+| Recolha e triagem de tarefas no GitHub | 45 a 90 minutos (hipótese) | **Por medir** | **Por calcular** |
+| Redação do texto em linguagem de negócio | 60 a 120 minutos (hipótese) | **Por medir** | **Por calcular** |
+| Formatação e composição do e-mail | 30 a 45 minutos (hipótese) | **Por medir** | **Por calcular** |
+| Revisão e envio pelo gestor | **Por medir** | **Por medir** | **Por calcular** |
+| **Tempo Total Semanal por Cliente** | **Por medir** | **Por medir** | **Por calcular** |
+
+---
+
+**Método:** usar o mesmo conjunto de tarefas e destinatário nos dois cenários; iniciar o cronómetro antes de recolher as tarefas e parar após concluir o envio/verificação. Registar duração manual e duração com ClientPulse, incluindo a revisão humana quando aplicável. A poupança percentual é `(tempo_manual - tempo_clientpulse) / tempo_manual * 100`, quando `tempo_manual > 0`. Identificar o número de experiências e não generalizar a partir de uma única medição.
 
 ---
 
