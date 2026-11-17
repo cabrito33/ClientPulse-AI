@@ -16,35 +16,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-/**
- * Calculates the ISO week number and ISO week-year for a given date.
- */
-function getIsoWeekYear(d) {
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  return { year: date.getUTCFullYear(), week: weekNo };
-}
-
-/**
- * Finds existing report in the same ISO week.
- */
-function findExistingWeekReport(reports, targetDate) {
-  const targetIso = getIsoWeekYear(targetDate);
-  for (const r of reports) {
-    const dateStr = r.period_end || r.created_at;
-    if (!dateStr) continue;
-    const rDate = new Date(dateStr);
-    if (isNaN(rDate.getTime())) continue;
-
-    const rIso = getIsoWeekYear(rDate);
-    if (rIso.year === targetIso.year && rIso.week === targetIso.week) {
-      return r;
-    }
-  }
-  return null;
-}
+import { getIsoWeekYear, findExistingWeekReport } from "../supabase/functions/_shared/idempotency.ts";
 
 /**
  * Simulates the dispatch-scheduled-reports processing loop.

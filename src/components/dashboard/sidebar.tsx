@@ -96,11 +96,11 @@ export function DashboardSidebar({
         <nav aria-label="Navegação do dashboard" className="space-y-0.5">
           {nav.map((item) => {
             const active = item.exact
-              ? pathname === item.href || pathname.startsWith(item.href + "/")
+              ? pathname === item.href
               : pathname.startsWith(item.href);
             return (
               <Link
-                key={item.href}
+                key={item.label}
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(

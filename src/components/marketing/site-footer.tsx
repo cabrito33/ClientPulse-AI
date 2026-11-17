@@ -20,11 +20,11 @@ const cols = [
     ],
   },
   {
-    title: "Demonstração",
+    title: "Aplicação",
     links: [
       { href: "/dashboard", label: "Dashboard do profissional" },
-      { href: "/dashboard/reports/rpt-atelier-w42", label: "Revisão de rascunho" },
-      { href: "/portal/demo-abc123", label: "Portal do cliente" },
+      { href: "/login", label: "Iniciar sessão" },
+      { href: "/#faq", label: "Sobre o portal do cliente" },
       { href: "/onboarding", label: "Assistente de onboarding" },
     ],
   },
@@ -33,7 +33,7 @@ const cols = [
     links: [
       { href: "/#faq", label: "Perguntas frequentes" },
       {
-        href: "https://github.com/cabrito33/weekly-client-reports",
+        href: "https://github.com/cabrito33/ClientPulse-AI",
         label: "Repositório GitHub",
         external: true,
       },

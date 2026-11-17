@@ -7,11 +7,12 @@ import { ArrowRight, AlertCircle, Loader2 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { buttonClass } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
+import { safeLoginDestination } from "@/lib/navigation";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/dashboard";
+  const next = safeLoginDestination(searchParams.get("next"));
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -134,10 +135,10 @@ function LoginForm() {
 
           <div className="mt-4 text-center">
             <Link
-              href="/dashboard"
+              href="/"
               className="text-xs text-muted-soft transition-colors hover:text-ink hover:underline"
             >
-              Continuar em modo de demonstração &rarr;
+              Voltar ao site &rarr;
             </Link>
           </div>
         </div>

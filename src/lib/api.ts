@@ -791,34 +791,9 @@ export async function getSprintMetrics(clientId: string): Promise<SprintMetric[]
   }
 
   let rows = (result.data as SprintMetricRow[] | null) ?? [];
-  const nowIsoWeek = isoWeekNumber(new Date().toISOString().split("T")[0]);
 
-  // Clean up any stray future sprints (e.g. S47 when current is S46)
-  const futureRows = rows.filter((r) => {
-    const m = r.sprint.match(/^S?(\d+)$/i);
-    return m && parseInt(m[1], 10) > nowIsoWeek;
-  });
-
-  if (futureRows.length > 0 && isUUID(clientId)) {
-    try {
-      await supabase
-        .from("sprint_metrics")
-        .delete()
-        .eq("client_id", clientId)
-        .in(
-          "sprint",
-          futureRows.map((r) => r.sprint)
-        );
-    } catch {
-      // Ignored
-    }
-  }
-
-  // Filter out any future weeks
-  rows = rows.filter((r) => {
-    const m = r.sprint.match(/^S?(\d+)$/i);
-    return !m || parseInt(m[1], 10) <= nowIsoWeek;
-  });
+  // Persisted historical metrics must not be deleted or hidden by week number.
+  // Week numbers alone cannot distinguish previous years.
 
   // Auto-backfill if client has reports but no sprint_metrics yet
   if (rows.length === 0 && isUUID(clientId)) {
@@ -1181,13 +1156,14 @@ export async function renewClientPortalToken(
   // 2. Revoke previous active tokens for this client
   if (oldToken) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase.from("portal_tokens") as any)
+    const { error: revokeError } = await (supabase.from("portal_tokens") as any)
       .update({
         is_active: false,
         revoked_at: now.toISOString(),
       })
       .eq("client_id", clientId)
       .eq("is_active", true);
+    if (revokeError) throw new Error("Não foi possível revogar o link anterior. A renovação foi interrompida.");
   }
 
   // 3. Insert new token record
