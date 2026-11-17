@@ -191,7 +191,7 @@ docs/              Documentação do projeto
 
 ## Estado do projeto
 
-*Atualizado a 15/11/2026.*
+*Estado técnico revisto a 15/11/2026; situação documental da validação revista a 17/11/2026.*
 
 | Área | Estado |
 | :--- | :--- |
@@ -206,7 +206,7 @@ docs/              Documentação do projeto
 | Envio direto sem aprovação (bypass) | Implementado, a validar no teste real |
 | Métricas de sucesso | Implementadas, a recolher no teste real |
 | Tracking de abertura de e-mail | Em revisão (depende de domínio verificado no Resend) |
-| Teste real com o GitHub Project da equipa (2 ciclos) | Por fazer |
+| Teste real com o GitHub Project da equipa (2 ciclos) | Issue [DO-03 #37](https://github.com/cabrito33/ClientPulse-AI/issues/37) encerrada; execução e resultados reais ainda sem evidência publicada (ver [RESULTADOS.md](./docs/RESULTADOS.md) para confirmação) |
 
 ## Segurança e privacidade
 
