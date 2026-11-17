@@ -15,6 +15,10 @@ import {
   AlertTriangle,
   Loader2,
   ShieldCheck,
+  Copy,
+  ExternalLink,
+  X,
+  Info,
 } from "lucide-react";
 import type { Client, Report, ReportSection } from "@/data/types";
 import { Badge } from "@/components/ui/badge";
@@ -63,7 +67,19 @@ export function ReportReview({
   const [isUpdatingAutoSend, setIsUpdatingAutoSend] = useState(false);
   const [toast, setToast] = useState<{ title: string; subtitle: string } | null>(null);
   const [error, setError] = useState<string | null>(report.errorMessage ?? null);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  // Close demo modal on Escape
+  useEffect(() => {
+    if (!showEmailModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowEmailModal(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showEmailModal]);
 
   // Record review_opened_at on mount if not yet set
   useEffect(() => {
@@ -137,10 +153,19 @@ export function ReportReview({
             subtitle: "E-mail enviado com sucesso, com o link do portal.",
           });
         }
+        setShowEmailModal(true);
         router.refresh();
       } else {
         setState("failed");
         setError(result.error);
+        if (
+          result.error?.includes("Resend só permite") ||
+          result.error?.includes("domínio") ||
+          result.error?.includes("sandbox") ||
+          result.error?.includes("testing emails")
+        ) {
+          setShowEmailModal(true);
+        }
       }
     });
   }
@@ -163,10 +188,19 @@ export function ReportReview({
             subtitle: "E-mail enviado com sucesso, com o link do portal.",
           });
         }
+        setShowEmailModal(true);
         router.refresh();
       } else {
         setState("failed");
         setError(result.error);
+        if (
+          result.error?.includes("Resend só permite") ||
+          result.error?.includes("domínio") ||
+          result.error?.includes("sandbox") ||
+          result.error?.includes("testing emails")
+        ) {
+          setShowEmailModal(true);
+        }
       }
     });
   }
@@ -256,6 +290,15 @@ export function ReportReview({
             <Eye className="h-3.5 w-3.5" aria-hidden="true" />
             Ver como o cliente
           </Link>
+          <button
+            type="button"
+            onClick={() => setShowEmailModal(true)}
+            className={buttonClass("ghost", "sm")}
+            title="Ver detalhes de entrega e acesso ao portal"
+          >
+            <Mail className="h-3.5 w-3.5" aria-hidden="true" />
+            Info de entrega
+          </button>
           <button
             type="button"
             onClick={handleDiscard}
@@ -384,9 +427,16 @@ export function ReportReview({
               {error || "O envio falhou. Tenta de novo e, se continuar, verifica o e-mail do cliente"}
             </p>
             {error?.includes("Resend só permite enviar para o e-mail da tua conta") && (
-              <p className="mt-1 text-[11.5px] text-muted-soft">
-                Dica: Enquanto usas o remetente de teste do Resend, define o e-mail do cliente com o mesmo e-mail da tua conta Resend. Para enviar para clientes externos, verifica um domínio próprio em <a href="https://resend.com/domains" target="_blank" rel="noreferrer" className="underline hover:text-ink">resend.com/domains</a>.
-              </p>
+              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEmailModal(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1 text-[11.5px] font-semibold text-white shadow-xs hover:bg-accent-hover transition-colors cursor-pointer"
+                >
+                  <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                  Por que não recebi o e-mail? / Aceder ao portal
+                </button>
+              </div>
             )}
           </div>
           <button
@@ -416,6 +466,16 @@ export function ReportReview({
             <p className="mt-0.5 text-[11.5px] text-teal/80">
               {toast.subtitle}
             </p>
+            <div className="mt-1.5">
+              <button
+                type="button"
+                onClick={() => setShowEmailModal(true)}
+                className="inline-flex items-center gap-1 text-[11.5px] font-medium underline underline-offset-2 hover:text-teal-hover cursor-pointer"
+              >
+                <Info className="h-3 w-3" />
+                Por que o e-mail não chega à caixa de entrada? (Ver detalhes)
+              </button>
+            </div>
           </div>
           <button
             type="button"
@@ -626,6 +686,177 @@ export function ReportReview({
           </section>
         </aside>
       </div>
+
+      {/* Pop-up explicativo para o professor e avaliadores */}
+      {showEmailModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="email-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowEmailModal(false);
+          }}
+        >
+          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto scroll-thin rounded-2xl border border-line bg-surface p-6 shadow-2xl animate-in zoom-in-95 duration-150 text-ink">
+            {/* Cabeçalho */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
+                  <Mail className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div>
+                  <h2 id="email-modal-title" className="text-[16px] font-semibold text-ink leading-snug">
+                    Envio de E-mail — Modo de Demonstração
+                  </h2>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+                    <Badge tone="accent">Ambiente Académico / Vercel</Badge>
+                    <span>·</span>
+                    <span className="truncate max-w-[200px]">{client.email}</span>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowEmailModal(false)}
+                className="rounded-lg p-1 text-muted hover:bg-paper hover:text-ink transition-colors cursor-pointer"
+                aria-label="Fechar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Conteúdo */}
+            <div className="mt-5 space-y-4 text-[13px] leading-relaxed">
+              {/* Card 1: Por que não recebes o e-mail na caixa de entrada */}
+              <div className="rounded-xl border border-line bg-paper/60 p-4">
+                <h3 className="flex items-center gap-1.5 font-semibold text-[13px] text-ink">
+                  <Info className="h-4 w-4 text-accent shrink-0" aria-hidden="true" />
+                  Por que o e-mail não chega à tua caixa de entrada pessoal?
+                </h3>
+                <p className="mt-1.5 text-[12px] text-muted">
+                  Este projeto está alojado na Vercel (<code className="rounded bg-surface px-1 py-0.5 text-[11px] text-ink font-mono">weekly-client-reports.vercel.app</code>) sob o remetente de teste padrão do Resend (<code className="rounded bg-surface px-1 py-0.5 text-[11px] text-ink font-mono">onboarding@resend.dev</code>).
+                </p>
+                <p className="mt-1 text-[12px] text-muted">
+                  Por normas globais de segurança (<strong className="text-ink font-medium">SPF / DKIM / DMARC</strong>) para prevenção de spam e phishing, os fornecedores de e-mail (Gmail, Outlook, servidores universitários) apenas aceitam mensagens para caixas externas se enviadas a partir de um <strong className="text-ink font-medium">domínio próprio verificado por DNS</strong>.
+                </p>
+              </div>
+
+              {/* Card 2: Como aceder ao que receberias */}
+              <div className="rounded-xl border border-teal/30 bg-teal-soft/40 p-4">
+                <h3 className="flex items-center gap-1.5 font-semibold text-[13px] text-teal">
+                  <ShieldCheck className="h-4 w-4 text-teal shrink-0" aria-hidden="true" />
+                  Como aceder ao conteúdo que o cliente receberia?
+                </h3>
+                <p className="mt-1.5 text-[12px] text-teal/90">
+                  O e-mail transacional conteria o resumo executivo dos 3 blocos e a ligação segura (Magic Link) para o <strong className="font-semibold text-teal">Portal do Cliente Zero-Login</strong>.
+                </p>
+                <p className="mt-1 text-[12px] text-teal/90">
+                  Podes aceder diretamente a essa mesma experiência agora, com os dados reais do projeto e sem necessidade de login ou password:
+                </p>
+
+                <div className="mt-3.5 flex flex-wrap items-center gap-2">
+                  <a
+                    href={`/portal/${client.portalToken}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-teal px-3.5 py-2 text-[12.5px] font-medium text-white shadow-xs hover:bg-teal-hover transition-colors"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                    Abrir Portal do Cliente &rarr;
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (typeof window !== "undefined" && navigator.clipboard) {
+                        const url = `${window.location.origin}/portal/${client.portalToken}`;
+                        navigator.clipboard.writeText(url);
+                        setCopiedLink(true);
+                        setTimeout(() => setCopiedLink(false), 2500);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-teal/30 bg-surface px-3 py-2 text-[12px] font-medium text-teal hover:bg-teal-soft transition-colors cursor-pointer"
+                  >
+                    {copiedLink ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 text-teal" aria-hidden="true" />
+                        Link copiado!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                        Copiar Magic Link
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Card 3: Pré-visualização do conteúdo do e-mail */}
+              <details className="rounded-xl border border-line bg-paper/40 p-3.5 text-[12px]">
+                <summary className="cursor-pointer font-medium text-ink-soft select-none hover:text-ink">
+                  Pré-visualização: O que constaria no e-mail
+                </summary>
+                <div className="mt-3 space-y-2 border-t border-line/60 pt-3 text-[11.5px] text-muted">
+                  <div className="flex gap-2">
+                    <span className="font-semibold text-ink-soft w-16 shrink-0">De:</span>
+                    <span className="truncate">ClientPulse AI &lt;onboarding@resend.dev&gt;</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="font-semibold text-ink-soft w-16 shrink-0">Para:</span>
+                    <span className="truncate">{client.name} &lt;{client.email}&gt;</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="font-semibold text-ink-soft w-16 shrink-0">Assunto:</span>
+                    <span className="text-ink font-medium">{report.subject}</span>
+                  </div>
+                  <div className="mt-2.5 rounded-lg border border-line bg-surface p-3 space-y-2.5">
+                    <div>
+                      <p className="font-semibold text-ink text-[12px]">✅ O que foi concluído:</p>
+                      <ul className="mt-1 list-disc pl-4 space-y-0.5 text-ink-soft">
+                        {sections.done.map((item, idx) => (
+                          <li key={idx}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    {sections.blocks.length > 0 && (
+                      <div>
+                        <p className="font-semibold text-ink text-[12px]">⚠️ Pontos de Atenção & Bloqueios:</p>
+                        <ul className="mt-1 list-disc pl-4 space-y-0.5 text-ink-soft">
+                          {sections.blocks.map((item, idx) => (
+                            <li key={idx}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {sections.next.length > 0 && (
+                      <div>
+                        <p className="font-semibold text-ink text-[12px]">🚀 Próximos Passos & Decisões:</p>
+                        <ul className="mt-1 list-disc pl-4 space-y-0.5 text-ink-soft">
+                          {sections.next.map((item, idx) => (
+                            <li key={idx}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            {/* Rodapé */}
+            <div className="mt-6 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setShowEmailModal(false)}
+                className={buttonClass("primary", "sm")}
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
