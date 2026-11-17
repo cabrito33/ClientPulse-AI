@@ -200,13 +200,10 @@ export async function sendReportEmail(options: SendReportEmailOptions): Promise<
     ? `Weekly Progress Report — ${options.companyName || options.clientName} (${options.periodEnd})`
     : `Relatório Semanal de Progresso — ${options.companyName || options.clientName} (${options.periodEnd})`;
 
-  // Never silently mark a mock delivery as a real send.
+  // No silent mock sends: a generated report is never marked as delivered
+  // unless Resend actually accepts the message.
   if (!apiKey || apiKey === 'mock' || apiKey.includes('your-resend-api-key')) {
-    if (Deno.env.get('ALLOW_MOCK_EMAILS') !== 'true') {
-      throw new Error('RESEND_API_KEY não configurada; envio real indisponível. Configure um domínio verificado.');
-    }
-    console.warn('[resend] Simulated delivery (ALLOW_MOCK_EMAILS=true). No email was sent.');
-    return { id: `mock_email_${Date.now()}`, mock: true };
+    throw new Error('RESEND_API_KEY não configurada; envio real indisponível. Configure um domínio verificado.');
   }
 
   // Real HTTP dispatch to Resend
