@@ -17,10 +17,12 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setSuccessMessage(null);
 
     if (password.length < 6) {
       setError("A palavra-passe deve ter pelo menos 6 caracteres.");
@@ -47,14 +49,14 @@ export default function RegisterPage() {
         return;
       }
 
-      // If session is created directly or email confirmation disabled
       if (data.session) {
         router.push("/onboarding");
+        router.refresh();
       } else {
-        // Confirmation email sent or pending
-        router.push("/onboarding");
+        // No active session until email confirmation: remain on this public page.
+        setSuccessMessage("Conta registada. Confirma o endereço de e-mail através da mensagem recebida e depois inicia sessão.");
+        setPassword("");
       }
-      router.refresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Ocorreu um erro ao criar a conta.");
     } finally {
@@ -78,6 +80,11 @@ export default function RegisterPage() {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="rounded-2xl border border-line bg-surface p-6 shadow-sm sm:p-8">
+          {successMessage && (
+            <div role="status" className="mb-6 rounded-xl border border-teal/30 bg-teal/5 p-4 text-sm text-ink">
+              {successMessage} <Link href="/login" className="font-semibold text-accent underline">Entrar</Link>
+            </div>
+          )}
           {error && (
             <div className="mb-6 flex items-start gap-3 rounded-xl border border-accent/20 bg-accent/5 p-4 text-sm text-accent">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
