@@ -55,81 +55,47 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 2. Fetch Client Record Using Admin Client (service_role)
+    // Shared database RPC enforces active, unexpired, non-revoked portal token.
+    // Never look up clients.portal_token directly with the service-role key.
     const supabase = createAdminClient();
-
-    const { data: client, error: clientError } = await supabase
-      .from('clients')
-      .select('id, name, company_name, language')
-      .eq('portal_token', token)
-      .maybeSingle();
-
-    if (clientError || !client) {
-      return new Response(
-        JSON.stringify({ error: 'Client portal not found. The link may be invalid or revoked.' }),
-        { status: 404, headers: { ...publicCorsHeaders, 'Content-Type': 'application/json' } }
-      );
+    const { data: portal, error } = await supabase.rpc('get_portal_data_by_token', {
+      p_token: token,
+    });
+    if (error) {
+      console.error('[client-portal-data] Portal RPC failed:', error.message);
+      return new Response(JSON.stringify({ error: 'Portal temporarily unavailable.' }), {
+        status: 503,
+        headers: { ...publicCorsHeaders, 'Content-Type': 'application/json' },
+      });
     }
-
-    // 3. Fetch All Sent/Approved Reports for this Client
-    const { data: reports, error: reportsError } = await supabase
-      .from('reports')
-      .select('id, status, period_start, period_end, summary_done, summary_blockers, summary_next_steps, sent_at, created_at')
-      .eq('client_id', client.id)
-      .in('status', ['sent', 'approved'])
-      .order('period_end', { ascending: false });
-
-    if (reportsError) {
-      throw new Error(`Failed to load client reports: ${reportsError.message}`);
+    if (!portal) {
+      return new Response(JSON.stringify({ error: 'Portal link invalid, expired or revoked.' }), {
+        status: 404,
+        headers: { ...publicCorsHeaders, 'Content-Type': 'application/json' },
+      });
     }
-
-    const reportList = reports ?? [];
-    const latestReport = reportList.length > 0 ? reportList[0] : null;
-    const history = reportList.length > 1 ? reportList.slice(1) : [];
-
-    // 4. Fetch Sprint Velocity Metrics (Completed tasks per sprint)
-    const { data: tasks, error: tasksError } = await supabase
-      .from('report_tasks')
-      .select('id, report_id, status_category, title')
-      .eq('client_id', client.id)
-      .eq('status_category', 'done');
-
-    if (tasksError) {
-      console.warn('Warning: Could not fetch sprint tasks for metrics:', tasksError.message);
-    }
-
-    // Calculate tasks completed per report period
-    const taskCountByReport: Record<string, number> = {};
-    for (const t of tasks ?? []) {
-      taskCountByReport[t.report_id] = (taskCountByReport[t.report_id] || 0) + 1;
-    }
-
-    const sprintVelocity = reportList
-      .slice()
-      .reverse()
-      .map((r) => ({
-        report_id: r.id,
-        period_end: r.period_end,
-        completed_tasks: taskCountByReport[r.id] || 0,
-      }));
-
-    // 5. Return Clean JSON Response
-    return new Response(
-      JSON.stringify({
-        client: {
-          name: client.name,
-          company_name: client.company_name,
-          language: client.language,
-        },
-        latest_report: latestReport,
-        history,
-        metrics: {
-          total_reports: reportList.length,
-          sprint_velocity: sprintVelocity,
-        },
-      }),
-      { status: 200, headers: { ...publicCorsHeaders, 'Content-Type': 'application/json' } }
-    );
+    const responseData = portal as {
+      client?: { name?: string; company_name?: string | null; language?: string };
+      reports?: Array<Record<string, unknown>>;
+      metrics?: Array<Record<string, unknown>>;
+    };
+    const reports = responseData.reports ?? [];
+    return new Response(JSON.stringify({
+      client: {
+        name: responseData.client?.name,
+        company_name: responseData.client?.company_name,
+        language: responseData.client?.language,
+      },
+      latest_report: reports[0] ?? null,
+      history: reports.slice(1),
+      metrics: {
+        total_reports: reports.length,
+        sprint_velocity: responseData.metrics ?? [],
+      },
+    }), {
+      status: 200,
+      headers: { ...publicCorsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal Server Error';
     return new Response(JSON.stringify({ error: message }), {
