@@ -10,6 +10,8 @@
 
 ---
 
+> **Adenda pós-Merge (18/11/2026):** a função `generate-report` v32 está ativa, com JWT, e o código publicado corresponde à `Main` integrada pelo PR #60. O CI e o deployment Vercel passaram. Os estados «CONFORME» abaixo descrevem verificações e controlos de implementação, **não** uma certificação independente de isolamento RLS ou a ausência de riscos. Os 15 testes SQL de isolamento não foram executados nesta revisão; continuam os riscos de tracking legado, referências multi-inquilino e envio concorrente descritos em [FINAL_AUDIT.md](FINAL_AUDIT.md).
+
 ## 1. Resumo Executivo da Auditoria
 
 O projeto **ClientPulse AI** tem implementação substancial para avaliação académica, com riscos e validações pendentes. Uma revisão complementar em 17/11/2026 identificou riscos de permissões SQL, exposição de dados no portal e simulação de envios no Resend. Foi aplicada uma migração em produção para restringir funções e limitar a publicação do portal. As correções ao frontend e ao motor de e-mail carecem de revisão, testes e deploy.
