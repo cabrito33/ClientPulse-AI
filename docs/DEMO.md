@@ -9,6 +9,8 @@
 
 ---
 
+> **Verificação técnica de 18/11/2026:** aplicação Vercel e função `generate-report` v32 publicadas, mas um ensaio com GitHub/Gemini/Resend reais e destinatário autorizado continua por realizar. A geração de um rascunho **não envia automaticamente e-mail** quando `bypass: false`; verificar o estado do cliente antes da demonstração. Não apresentar métricas ou entregas simuladas como resultados reais.
+
 ## 1. Preparação Prévia da Demonstração (Checklist de Bastidores)
 
 Antes de iniciar a contagem dos 5 minutos, garanta que tem as seguintes janelas/separadores preparados no navegador:
@@ -62,7 +64,7 @@ Antes de iniciar a contagem dos 5 minutos, garanta que tem as seguintes janelas/
 - **Rota:** `/dashboard/clients/[id]` $\rightarrow$ Transição para `/dashboard/reports/[id]`
 
 > **O que dizer (Script):**
-> *"Chegada a sexta-feira, o sistema dispara a geração. Vou simular o envio clicando em 'Gerar relatório agora'.*\
+> *"Chegada a sexta-feira, o sistema dispara a geração. Vou demonstrar a geração de um rascunho clicando em 'Gerar relatório agora'; o envio é uma etapa diferente, sujeita a aprovação ou configuração explícita de bypass.*\
 > *Neste momento, a nossa Edge Function no Supabase extrai exclusivamente os metadados dos cartões — títulos e estados. Quero sublinhar um princípio essencial de arquitetura e privacidade: **o ClientPulse AI nunca acede, lê ou armazena código-fonte dos repositórios**. Apenas metadados de gestão de tarefas.*\
 > *O modelo Gemini recebe estes dados e sintetiza o progresso em três blocos executivos rigorosos em Português europeu: 'O que foi feito', 'Bloqueios e impedimentos' e 'Próximos passos'.*\
 > *Vejam o resultado: tarefas técnicas foram convertidas numa síntese fluida, clara e compreensível para qualquer stakeholder de negócio."*
