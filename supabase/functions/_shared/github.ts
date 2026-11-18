@@ -531,7 +531,6 @@ export async function fetchProjectColumns(pat: string, projectId: string) {
                 options {
                   id
                   name
-                  description
                   color
                 }
               }

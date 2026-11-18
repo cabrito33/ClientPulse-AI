@@ -17,6 +17,7 @@ import test from "node:test";
 import {
   validateGraphQLQuery,
   executeGitHubGraphQL,
+  fetchProjectColumns,
   SecurityError,
   ALLOWED_GRAPHQL_FIELDS,
   FORBIDDEN_SOURCE_CODE_FIELDS,
@@ -184,6 +185,47 @@ test("BE-09: Official ClientPulse AI queries must pass runtime validation", () =
     }
   `;
   assert.doesNotThrow(() => validateGraphQLQuery(tasksQuery));
+});
+
+test("BE-09: Real fetchProjectColumns query passes allowlist and returns status options", async () => {
+  // Invoke the actual exported production function, not a copied query.
+  // It previously requested the unapproved `description` field and failed
+  // before a GitHub request was made (onboarding HTTP 500).
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async (url, options) => {
+    calls++;
+    assert.equal(String(url), "https://api.github.com/graphql");
+    assert.equal(options.method, "POST");
+    const { query, variables } = JSON.parse(options.body);
+    assert.equal(variables.projectId, "PVT_test_board");
+    assert.equal(query.includes("description"), false, "Status query must not request unused description field");
+    return new Response(JSON.stringify({
+      data: {
+        node: {
+          title: "ClientPulse AI",
+          fields: {
+            nodes: [{
+              id: "FIELD_status",
+              name: "Status",
+              options: [
+                { id: "todo", name: "Todo", color: "GRAY" },
+                { id: "done", name: "Done", color: "GREEN" },
+              ],
+            }],
+          },
+        },
+      },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  try {
+    const result = await fetchProjectColumns("ghp_test_dummy", "PVT_test_board");
+    assert.equal(calls, 1);
+    assert.equal(result.fieldName, "Status");
+    assert.deepEqual(result.columns.map((column) => column.name), ["Todo", "Done"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("BE-09: Fails immediately if repository source code or file contents are requested (Blob.text)", () => {
