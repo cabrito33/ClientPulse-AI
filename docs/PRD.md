@@ -3,16 +3,16 @@
 **Projeto:** ClientPulse AI — Relatórios Semanais de Progresso para Freelancers e Agências\
 **Equipa:** Afonso Pedro (Backend), Ricardo Santos (Frontend), Manel Homem (Frontend), Miguel Lima (Backend) (confirmado em 17/11/2026)\
 **Repositório GitHub:** https://github.com/cabrito33/ClientPulse-AI\
-**Versão:** 2.0 (Alinhado com o Relatório de Validação)\
+**Versão:** 2.1 (Alinhado com Relatório de Validação, decisões técnicas e PRD_EN)\
 
 
-## Nota de alinhamento — 17/11/2026
+## Nota de alinhamento — 17/11/2026 (revisão documental 18/11/2026)
 
 Mantêm-se os objetivos e US01–US05 originais. Maria é um cenário ilustrativo, não uma entrevista nem uma medição de poupança. O calendário de cinco semanas é o plano, distinto dos três sprints observados no GitHub Projects. A versão inglesa foi alinhada com estas metas.
 
 Critérios ainda parciais: login sem `next` abre o dashboard, não inicia automaticamente o onboarding; voz depende do browser; o editor é texto/Markdown, não WYSIWYG; o horário é persistido (sexta-feira 09:00 UTC por defeito), sem editor completo na UI; o histórico do portal lista relatórios, sem abrir o texto integral de cada relatório antigo. Gemini/PAT/pg_cron são a implementação atual, não OpenAI/OAuth/Make. O contexto enviado à IA inclui cliente e notas do gestor: ver [PRIVACY.md](PRIVACY.md).
 
-Evidências e pendências: [FINAL_AUDIT.md](FINAL_AUDIT.md), [AGILE_EVIDENCE.md](AGILE_EVIDENCE.md) e [RESULTADOS.md](RESULTADOS.md).
+Evidências e pendências: [FINAL_AUDIT.md](FINAL_AUDIT.md), [AGILE_EVIDENCE.md](AGILE_EVIDENCE.md) e [RESULTADOS.md](RESULTADOS.md). Após o Merge #60, a função `generate-report` v32 foi publicada; esta confirmação não significa que as metas quantitativas ou dois ciclos reais tenham sido medidos.
 
 ---
 
@@ -53,7 +53,7 @@ Ao adotar o **ClientPulse AI**, a Maria realiza o onboarding em menos de 5 minut
 
 Na sexta-feira às 09:00, o sistema compila a atividade do GitHub Projects e a IA gera automaticamente um rascunho de relatório executivo em Português. A Maria recebe um alerta no Dashboard, lê o resumo em 2 minutos, faz uma pequena afinação e clica em "Aprovar e Enviar".
 
-O cliente recebe um e-mail profissional com a síntese e um link seguro de acesso direto ao **Portal do Cliente**, onde visualiza os progressos da semana e o gráfico de tarefas concluídas por *sprint*, sem necessidade de criar conta ou gerir palavras-passe. A Maria reduz o tempo de gestão de relatórios em mais de 80% e elimina a ansiedade dos clientes.
+O cliente recebe um e-mail profissional com a síntese e um link seguro de acesso direto ao **Portal do Cliente**, onde visualiza os progressos da semana e o gráfico de tarefas concluídas por *sprint*, sem necessidade de criar conta ou gerir palavras-passe. No cenário hipotético, a Maria poderia reduzir o tempo de gestão de relatórios em mais de 80% e aliviar a ansiedade dos clientes.
 
 ---
 

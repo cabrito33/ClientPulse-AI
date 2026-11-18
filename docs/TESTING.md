@@ -2,6 +2,10 @@
 
 Audit environment: Windows, Node.js 24.20.0, npm 11.19.0, Chromium via Playwright 1.65.1. CI uses Node.js 22. Local results were collected on 2026-11-17/18: 89 Node tests, 8 browser tests and 233 local documentation links/anchors passed, along with lint, types and both production build commands. No production credentials, provider sends or database changes were used.
 
+## Post-merge deployment verification — 2026-11-18
+
+On top of the historical local test observations below, the GitHub Actions `Main` push workflow for commit `a081dd64a0034fc6460bd27c5d640dd7f372ea43` passed, and the Vercel production build for that commit was `READY`. Hosted `generate-report` v32 was read back from Supabase: `verify_jwt` is true and the entrypoint plus seven shared modules match the merged source. The undefined `currentIso` reference is gone. This is **not** a live provider, SQL isolation, two-week use or actual e-mail-delivery test. No additional passing Node/Playwright test count is asserted here; the 89/8 counts below are from the recorded local audit.
+
 ## Commands and scope
 
 ```bash
@@ -20,7 +24,7 @@ On Windows PowerShell use `npm.cmd`/`npx.cmd` if script execution policy blocks 
 
 ## What is actually exercised
 
-Publication preparation follow-up (2026-11-18): actual cached Supabase CLI 3.1.0 version/help was verified, without hosted commands. The two actual-handler regressions now explicitly test `bypass: false` against `auto_send_enabled: true`, with AI success/fallback, a draft write, correct ISO week, zero email-helper calls and a network-call guard. These remain part of the existing 11-test finalization suite. See [the controlled procedure](API.md#manual-publication-and-smoke-test-after-pr-60-is-merged). Deno/Postgres execution, deployed-bundle inspection and real GitHub/Gemini smoke tests remain pending; no production invocation is authorized by these instructions.
+Historical publication preparation (2026-11-18): Supabase CLI 3.1.0 version/help was verified locally, before the later authorized v32 deployment. The two actual-handler regressions now explicitly test `bypass: false` against `auto_send_enabled: true`, with AI success/fallback, a draft write, correct ISO week, zero email-helper calls and a network-call guard. These remain part of the existing 11-test finalization suite. See [the controlled procedure](API.md#manual-publication-and-smoke-test-after-pr-60-is-merged). Deno/Postgres execution, deployed-bundle inspection and real GitHub/Gemini smoke tests remain pending; no production invocation is authorized by these instructions.
 
 | Evidence | Scope | Does not establish |
 | --- | --- | --- |

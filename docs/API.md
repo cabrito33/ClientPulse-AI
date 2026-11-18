@@ -2,6 +2,10 @@
 
 Source-reviewed on 2026-11-18. These are implementation contracts, not results of live provider tests. Edge Functions live under [supabase/functions](../supabase/functions); browser calls use [edge.ts](../src/lib/edge.ts), with server actions under [actions](../src/app/actions).
 
+## Post-merge deployment status (verified 2026-11-18)
+
+PR [#60](https://github.com/cabrito33/ClientPulse-AI/pull/60) was merged into `Main` as `a081dd64a0034fc6460bd27c5d640dd7f372ea43`. The hosted `generate-report` is now **version 32, ACTIVE, with `verify_jwt: true`**. Direct read-back of the deployed entrypoint and all seven shared modules matches `Main`; `getIsoWeekYear(periodEnd).week` is present and the undefined `currentIso` reference is absent. All 15 SQL migrations are present. **No live report-generation, sending, database isolation or concurrent dispatch test was performed by this verification.** See [TESTING.md](TESTING.md) and [RESULTADOS.md](RESULTADOS.md). The historical publication instructions below are for reference only: **do not redeploy just to clear the already-fixed `currentIso` bug**.
+
 ## Authentication and common behaviour
 
 The deployed base is `https://<PROJECT_REF>.supabase.co/functions/v1`. Management endpoints validate a Supabase bearer JWT and agency ownership. Internal generation/dispatch can use `X-Scheduled-Secret`; never place this secret in browser code. CORS does not authenticate callers. JSON error bodies normally contain `error`; wrong methods return 405, missing inputs 400, invalid identity 401, missing/inaccessible resources 404. Unhandled errors return 500. Inspect each function for specific exceptions below.
@@ -52,7 +56,7 @@ AI failure produces a raw structured draft and disables automatic sending; it do
 
 ### Manual publication and smoke test after PR #60 is merged
 
-**Deployment gap, reported by the project owner on 2026-11-18:** the hosted `generate-report` is still version 31 and references undefined `currentIso.week`. The branch fixes this with `getIsoWeekYear(periodEnd).week`, imported from `_shared/idempotency.ts`. Local tests and GitHub CI do not publish this correction to Supabase. Version 31 was not independently inspected during this documentation update; remote deployment and smoke-test results remain pending.
+**Historical deployment gap (resolved on 2026-11-18):** version 31 contained an undefined `currentIso.week` reference. The PR #60 fix `getIsoWeekYear(periodEnd).week`, imported from `_shared/idempotency.ts`, was published as **version 32** and verified via direct read-back. The real, isolated report-generation smoke test remains pending; do not confuse code inspection with a live invocation.
 
 **Prepare the complete bundle.** After a human merges PR #60, use a clean checkout of the resulting `Main` commit and record its SHA. From the repository root, preserve these relative paths from that same commit:
 
@@ -65,7 +69,7 @@ Deploy from the full checkout so the CLI includes the imported shared modules. D
 
 **CLI verification, 2026-11-18.** Supabase CLI **3.1.0** was found in the existing npm cache, although it is not on PATH or installed as a repository dependency. Its actual `--version`, `functions deploy --help`, `functions list --help` and `functions serve --help` were executed. Both hosted commands support `--remote=<ref|branch>`; deploy supports `--use-api` (server-side bundling without Docker). This matches the official reference linked below. No CLI upgrade or dependency installation was performed. Unversioned `npx` looked for a different release and did not resolve the cached installation; use the verified entrypoint below rather than silently downloading another version.
 
-**Publish only this function, manually.** An authorized operator must select the actual project reference and authenticate the CLI outside repository files. This PowerShell example uses the exact cached entrypoint verified on this workstation. On another machine, locate the installed CLI, record its version and check its own help before adapting the invocation. The cache path may disappear; stop if it is absent. Only version/help commands have been executed, not list, deploy or remote invocation.
+**Archived procedure — already completed for v32; do not repeat without a new approved change.** An authorized operator must select the actual project reference and authenticate the CLI outside repository files. This PowerShell example uses the exact cached entrypoint verified on this workstation. On another machine, locate the installed CLI, record its version and check its own help before adapting the invocation. The cache path may disappear; stop if it is absent. Only version/help commands have been executed, not list, deploy or remote invocation.
 
 ```powershell
 # Run only after the human merge and deployment decision, from the merged checkout.
@@ -115,7 +119,7 @@ if ($response.StatusCode -ne 201 -or $result.success -ne $true -or
 
 Inspect that report in the manager dashboard: three blocks, correct period and an ISO week matching `period.end` in UTC; verify the returned sprint counts against the selected test board. Check Supabase function logs for this invocation and confirm the previous undefined-variable error is absent, with no send attempted by this request. Record a sanitized result (date, source SHA, deployed version, HTTP status and observations), not JWTs, PATs, live portal URLs or client data. `generated_without_ai: true` validates the fallback path only, not live Gemini success. On failure, inspect existing report/metric writes before retrying; do not delete production rows or automatically roll back to the known-broken version 31.
 
-This publication addresses the undefined week variable only. Sending concurrency, legacy tracking, dependency advisories and the unexecuted RLS suite remain open in [FINAL_AUDIT.md](FINAL_AUDIT.md). Neither this documentation update nor a successful smoke test resolves them.
+Version 32 resolves the undefined week variable only. Sending concurrency, legacy tracking, dependency advisories, yearless `Snn` metric keys and the unexecuted RLS suite remain open in [FINAL_AUDIT.md](FINAL_AUDIT.md). An eventual live smoke test would not by itself resolve those risks.
 
 ## POST approve-and-send
 

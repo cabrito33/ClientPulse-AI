@@ -6,11 +6,11 @@
 **Version:** 2.1 (Aligned with Validation Report, Mentor Architecture, and Backend Decisions)
 
 
-## Implementation alignment — 2026-11-17
+## Implementation alignment — 2026-11-17 (documentation refreshed 2026-11-18)
 
 US01–US05 and the original PT goals are retained. Maria's story is illustrative, not an interview or measured time saving. Market comparisons are historical research, not refreshed pricing.
 
-Acceptance gaps: default login opens the dashboard rather than onboarding; voice depends on browser capability; editing is text/Markdown; schedules are persisted with Friday 09:00 UTC default but lack a complete UI editor; portal history lists earlier reports without opening their full text. No user goal is declared achieved through code or fixtures. See [FINAL_AUDIT.md](FINAL_AUDIT.md), [AGILE_EVIDENCE.md](AGILE_EVIDENCE.md) and [RESULTADOS.md](RESULTADOS.md).
+Acceptance gaps: default login opens the dashboard rather than onboarding; voice depends on browser capability; editing is text/Markdown; schedules are persisted with Friday 09:00 UTC default but lack a complete UI editor; portal history lists earlier reports without opening their full text. No user goal is declared achieved through code or fixtures. The post-merge `generate-report` v32 deployment was verified on 2026-11-18; that does not validate real-user outcomes or two reporting cycles. See [FINAL_AUDIT.md](FINAL_AUDIT.md), [AGILE_EVIDENCE.md](AGILE_EVIDENCE.md) and [RESULTADOS.md](RESULTADOS.md).
 
 ---
 

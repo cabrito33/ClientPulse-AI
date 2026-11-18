@@ -1,5 +1,7 @@
 # GitHub Issues Backlog — ClientPulse AI (Backend & Database)
 
+> **HISTORICAL PLANNING DRAFT (not current status; verified 2026-11-18).** This document proposes 11 numbered *work packages*, not GitHub issues #1–#11. Phrases such as “Current”, unchecked criteria, Gemini model examples and Resend mock suggestions below reflect the original proposal; they are **not the live implementation, real release state or evidence that the acceptance criteria are unmet**. Current work and status belong to [GitHub Issues](https://github.com/cabrito33/ClientPulse-AI/issues), [Project 1](https://github.com/users/cabrito33/projects/1), the [PRD](PRD.md), [API reference](API.md), [agile evidence](AGILE_EVIDENCE.md) and [final audit](FINAL_AUDIT.md). In particular, Resend never silently reports fake successful delivery in production.
+
 > **Team Context:** This task list is prioritized and sized specifically for a **1–2 person backend team** across the 5-week course sprint. Each issue includes copy-pasteable acceptance criteria, labels, and estimated effort (`S` = 1–3 hours, `M` = 4–8 hours, `L` = 1–2 days).
 >
 > **Dependency Order:** Complete issues in the numbered order below to avoid blockers.

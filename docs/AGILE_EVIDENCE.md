@@ -14,6 +14,8 @@ These are the board's recorded iterations. The PRD's five weeks are planned work
 
 Project inspection found 49 items and fields including Status, Priority, Size, Estimate and Iteration. Status options are Backlog, To do, In progress, Review and Done; Priority uses High/Medium/Low, while issue labels use P0–P3; Size uses Quick/Medium/Long. Presence of an Estimate field is not evidence that every issue was estimated. Some Done stories have no iteration assignment.
 
+**Snapshot distinction (2026-11-18):** the separately supplied `ClientPulse AI - Backlog.tsv` contains **44 rows**: Sprint 1 has 15/15 Done (47 estimated points), Sprint 2 has 10/10 Done (33), Sprint 3 has 11/12 Done (42), and seven rows have no iteration. The earlier count of 49 refers to the GitHub Projects inspection, not necessarily the same export or capture time. Do not present these counts as directly comparable or infer missing work from the difference. The TSV and the five-page sprint PDF are external delivery materials, not tracked source files here.
+
 ## Retrospective story map from the existing PRD
 
 This table is an audit reconstruction for traceability, **not evidence that a story-mapping workshop occurred**.
@@ -33,6 +35,6 @@ This table is an audit reconstruction for traceability, **not evidence that a st
 - BE-17 #31 retry queue remains Backlog; a durable application retry queue is not implemented.
 - Project readme still calls the product “Weekly Client Reports”, mentions additional integrations and contains a placeholder repository reference/course-name drift. This audit documents the discrepancy without editing the board.
 - [ISSUES.md](ISSUES.md) is a historical planning draft. Its numbered entries are not verified current GitHub issue IDs and its five-week backend breakdown is not the three-iteration board.
-- No original story-mapping workshop artifact, sprint retrospective minutes or Canva PDF was found locally. No ceremonies, decisions or PDF review were invented. Preserve the team's corrected Canva material and supply it separately for evaluation.
+- No original story-mapping workshop artifact, contemporaneous sprint retrospective minutes or Canva file is **stored in this repository**. A separate corrected five-page PDF (`ClientPulse_AI_Sprints_Simples_Corrigido.pdf`) was supplied for review: it summarizes the three sprints, a five-week plan and US01–US05. Its summary text must not be presented as independent minutes proving that ceremonies occurred. No ceremonies or decisions are invented; attach the approved PDF separately to the delivery if required.
 
 Evidence was read using `gh project list`, `gh project field-list 1 --owner cabrito33 --format json`, `gh project item-list 1 --owner cabrito33 --limit 100 --format json` and the connected GitHub issue reader. No raw personal or credential-bearing payloads are committed.
