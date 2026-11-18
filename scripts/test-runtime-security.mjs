@@ -199,7 +199,7 @@ test("BE-09: Real fetchProjectColumns query passes allowlist and returns status 
     assert.equal(options.method, "POST");
     const { query, variables } = JSON.parse(options.body);
     assert.equal(variables.projectId, "PVT_test_board");
-    assert.doesNotMatch(query, /\\bdescription\\b/i);
+    assert.equal(query.includes("description"), false, "Status query must not request unused description field");
     return new Response(JSON.stringify({
       data: {
         node: {
