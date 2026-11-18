@@ -3,9 +3,8 @@
  * ClientPulse AI — Report Idempotency & ISO Week Deduplication Helper
  * File: supabase/functions/_shared/idempotency.ts
  *
- * Enforces acceptance criteria:
- * - A scheduled report or auto-send direct dispatch must NEVER execute twice
- *   for the same client in the same ISO week/period.
+ * Detects existing reports in an ISO week for sequential deduplication.
+ * This lookup is not an atomic claim and does not prevent concurrent sends.
  * ==============================================================================
  */
 

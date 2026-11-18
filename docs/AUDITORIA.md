@@ -1,19 +1,22 @@
 # Relatório de Auditoria Técnica e Segurança — ClientPulse AI
 
-**Data da Auditoria:** 13 de Novembro de 2026  
-**Repositório:** `cabrito33/ClientPulse-AI`  
-**Branch:** `Main`  
+> **Registo histórico, substituído para efeitos da revisão atual por [FINAL_AUDIT.md](FINAL_AUDIT.md).** Os resultados e observações de produção abaixo não foram repetidos nesta auditoria. Não interpretar as classificações históricas como garantia atual de isolamento, entrega ou validação do PRD. As duas migrações de segurança já existiam; não foram recriadas nem aplicadas nesta revisão. Resend em modo de testes é autorizado pelo professor; domínio próprio não é requisito da entrega.
+
+
+**Data da Auditoria:** 13 de Novembro de 2026\
+**Repositório:** `cabrito33/ClientPulse-AI`\
+**Branch:** `Main`\
 **Objetivo do Projeto:** MVP funcional de ponta a ponta com segurança rigorosa, minimização de dados enviados a modelos de IA, isolamento multi-inquilino e estabilidade em produção.
 
 ---
 
 ## 1. Resumo Executivo da Auditoria
 
-O projeto **ClientPulse AI** atingiu a maturidade técnica necessária para entrega e operação em produção. Uma revisão complementar em 17/11/2026 identificou riscos de permissões SQL, exposição de dados no portal e simulação de envios no Resend. Foi aplicada uma migração em produção para restringir funções e limitar a publicação do portal. As correções ao frontend e ao motor de e-mail carecem de revisão, testes e deploy.
+O projeto **ClientPulse AI** tem implementação substancial para avaliação académica, com riscos e validações pendentes. Uma revisão complementar em 17/11/2026 identificou riscos de permissões SQL, exposição de dados no portal e simulação de envios no Resend. Foi aplicada uma migração em produção para restringir funções e limitar a publicação do portal. As correções ao frontend e ao motor de e-mail carecem de revisão, testes e deploy.
 
 ### Resumo dos Resultados
 - **Integridade do Build e Lint:** 100% dos testes e verificações estáticas (`npm run lint`, `npx tsc --noEmit`, `npm run check:use-server`, `npm test` e `next build`) passam com zero erros e zero avisos bloqueantes.
-- **Segurança de Credenciais e PATs:** O token pessoal do GitHub (PAT) é cifrado em repouso com AES-256-GCM (Migração 003) e protegido contra leitura do browser via Column-Level Security (Migração 010), impedindo que o role `authenticated` leia `pat_token` ou `pat_token_encrypted`.
+- **Segurança de Credenciais e PATs:** O token pessoal do GitHub (PAT) é cifrado em repouso com AES-256-GCM (Migração 007) e protegido contra leitura do browser via Column-Level Security (Migração 010), impedindo que o role `authenticated` leia `pat_token` ou `pat_token_encrypted`.
 - **Comunicação com IA (Google Gemini):** A chave de API do Gemini deixou de ser transmitida como parâmetro de consulta na URL e passou a ser enviada exclusivamente no cabeçalho HTTP `x-goog-api-key`.
 - **Rastreio de Abertura e Webhooks (BE-21):** O webhook do Resend (`/api/webhooks/resend`) valida a assinatura Svix via HMAC-SHA256 (retornando HTTP 401 para requisições inválidas). O endpoint de tracking pixel (`/api/track/open`) ignora timestamps externos e utiliza estritamente a hora do servidor.
 - **Magic Links e Gestão de Sessão do Portal (BE-19):** Tokens de portal possuem validade padrão de 90 dias (configurável via `PORTAL_TOKEN_EXPIRATION_DAYS`). A função de base de dados `get_portal_data_by_token` falha fechado (retorna `NULL` para tokens inativos, expirados ou revogados). O dashboard inclui a ação "Renovar link do portal" que revoga imediatamente o token anterior.
@@ -33,7 +36,7 @@ O projeto **ClientPulse AI** atingiu a maturidade técnica necessária para entr
 
 | Verificação de Segurança | Estado | Evidência e Mecanismo de Proteção |
 | :--- | :---: | :--- |
-| **PATs do GitHub cifrados em repouso?** | **CONFORME** | Cifrado com AES-256-GCM (`pat_token_encrypted`) via chave simétrica de 256 bits (`PAT_ENCRYPTION_KEY`). Migração `003_pat_encryption.sql`. |
+| **PATs do GitHub cifrados em repouso?** | **CONFORME** | Cifrado com AES-256-GCM (`pat_token_encrypted`) via chave simétrica de 256 bits (`PAT_ENCRYPTION_KEY`). Migração `007_be_19_encrypt_pat.sql`. |
 | **PAT inacessível a partir do browser?** | **CONFORME** | Migração `010_restrict_pat_access.sql` revogou `SELECT` total do role `authenticated` na tabela `github_integrations` e concedeu leitura apenas às colunas não sensíveis (`id, agency_id, github_username, is_valid, last_synced_at, created_at`). |
 | **Isolamento multi-inquilino (RLS)?** | **CONFORME** | RLS ativado em todas as tabelas (`agencies`, `github_integrations`, `clients`, `reports`, `report_tasks`, `sprint_metrics`, `portal_tokens`, `delivery_logs`). |
 | **Validação de assinatura do Resend?** | **CONFORME** | Endpoint `/api/webhooks/resend` verifica os cabeçalhos `svix-id`, `svix-timestamp` e `svix-signature` utilizando HMAC-SHA256 com `RESEND_WEBHOOK_SECRET`. Rejeição com status 401 se ausente ou inválida. |
@@ -72,11 +75,11 @@ O projeto **ClientPulse AI** atingiu a maturidade técnica necessária para entr
 
 Para prevenir regressões em ambiente de produção (Vercel e Supabase), foram implementadas as seguintes salvaguardas:
 
-1. **Validação de Server Actions (`check:use-server`):**  
+1. **Validação de Server Actions (`check:use-server`):**\
    Script automatizado (`scripts/check-use-server.mjs`) que analisa recursivamente todos os ficheiros com diretiva `"use server"` para garantir que apenas funções assíncronas são exportadas, prevenindo quebras de compilação no Next.js.
-2. **Isolamento de Compilação (`cross-env NEXT_DIST_DIR=.next-check`):**  
+2. **Isolamento de Compilação (`cross-env NEXT_DIST_DIR=.next-check`):**\
    O comando `npm run check` corre linting, checagem de tipos, testes automatizados e o build do Next.js numa diretoria isolada (`.next-check`), permitindo validações completas sem colidir com instâncias ativas do servidor de desenvolvimento (`npm run dev`).
-3. **Integração Contínua (CI):**  
+3. **Integração Contínua (CI):**\
    O workflow `.github/workflows/ci.yml` executa no ambiente Ubuntu com Node.js 22, validando lint, tipos, server actions, suíte completa de testes (`npm test`) e compilação de produção.
 
 ---
@@ -108,8 +111,8 @@ A auditoria ao código e arquitetura do ClientPulse AI reflete o estado factual 
    - Apenas o endpoint público de consulta do portal (`client-portal-data` / RPC de portal por token) permite `Access-Control-Allow-Origin: *` para viabilizar o acesso seguro e sem login a partir de navegadores dos clientes finais.
 
 2. **Testes de Isolamento Multi-Inquilino (RLS):**
-   - Os testes de isolamento de Row Level Security (`supabase/tests/rls_isolation_test.sql`) foram executados com sucesso em ambiente de produção (10/10 testes passaram a 14/11/2026).
-   - O conjunto de testes foi expandido para cobrir as novas garantias (migrações 009 a 013, incluindo a proibição de leitura direta do PAT pelo role `authenticated` e o isolamento e imutabilidade dos `audit_logs`), devendo ser reexecutado após a aplicação remota de todas as migrações.
+   - O registo anterior afirmava 10/10 testes RLS em produção a 14/11/2026. Não existe evidência bruta local para confirmar essa execução; os testes foram entretanto corrigidos e não foram reexecutados nesta auditoria.
+   - O conjunto de testes foi expandido para cobrir as novas garantias (migrações 009 a 013, incluindo a proibição de leitura direta do PAT pelo role `authenticated` e o isolamento e imutabilidade dos `audit_logs`), devendo ser executado primeiro numa base de dados local/de testes, sem aplicação remota automática.
 
 3. **Registo do Incidente de 14/11 e Resolução de Acesso a Credenciais:**
    - **Incidente:** Após a aplicação da migração 010 (`010_restrict_pat_access.sql`), a restrição a nível de coluna (CLS) revogou o acesso SELECT do role `authenticated` às colunas `pat_token` e `pat_token_encrypted`. Como consequência, as funções `generate-report` e `github-sync` falharam temporariamente em produção ao tentar ler o PAT através do cliente associado ao utilizador final (`createUserClient`).

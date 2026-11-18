@@ -1,9 +1,9 @@
-# Roteiro de Teste Real em Produção — ClientPulse AI
+# Roteiro de Teste Real Controlado — ClientPulse AI
 
-**Projeto:** ClientPulse AI — Relatórios Semanais de Progresso para Freelancers e Agências  
-**Data:** Novembro de 2026  
-**Ambiente:** Produção (Supabase Cloud + Vercel / Next.js)  
-**Fonte de Dados:** GitHub Projects API (Quadro do repositório da equipa)  
+**Projeto:** ClientPulse AI — Relatórios Semanais de Progresso para Freelancers e Agências\
+**Data:** Novembro de 2026\
+**Ambiente:** Projeto de testes/staging explicitamente selecionado (Supabase + Next.js). Produção exige validação e autorização próprias; este guião não foi executado nesta auditoria.\
+**Fonte de Dados:** GitHub Projects API (Quadro do repositório da equipa)\
 
 ---
 
@@ -30,20 +30,20 @@ Antes de iniciar qualquer ciclo, confirme a configuração de todos os component
   - `GEMINI_API_KEY`: Chave da Google AI Studio / Gemini API.
   - `RESEND_API_KEY`: Chave de envio transacional do Resend (`re_...`).
   - `SCHEDULED_FUNCTION_SECRET`: Segredo partilhado de 32 bytes hex para autenticação do cron e chamadas internas.
-  - `PAT_ENCRYPTION_KEY`: Chave simétrica AES-256-GCM (hex de 32 bytes) para cifrar os tokens do GitHub na base de dados.
+  - `PAT_ENCRYPTION_KEY`: Chave simétrica AES-256-GCM (32 bytes codificados em base64) para cifrar os tokens do GitHub na base de dados.
   - `RESEND_WEBHOOK_SECRET`: Segredo de assinatura do webhook do Resend (`whsec_...`) gerado no painel do Resend.
   - `PORTAL_TOKEN_EXPIRATION_DAYS`: Definido para `90` (ou omitido, assumindo 90 dias por defeito).
-  - `NEXT_PUBLIC_APP_URL` / `APP_URL`: URL canónico da aplicação em produção (ex.: `https://clientpulse-ai.vercel.app` ou `http://localhost:3000` em teste local).
+  - `NEXT_PUBLIC_APP_URL` / `APP_URL`: URL canónico da aplicação em produção (ex.: `https://weekly-client-reports.vercel.app` ou `http://localhost:3000` em teste local).
 
 - [ ] **2. Modelo do Gemini Verificado:**
-  - As Edge Functions utilizam como modelo primário `gemini-3.8-flash` (ou `gemini-1.5-flash`), com fallback automático em caso de sobrecarga ou erro 503 para `gemini-3.7-flash` e, em última instância, fallback para sumarização estruturada determinística sem IA (`generated_without_ai = true`), garantindo que o pipeline nunca bloqueia.
+  - As Edge Functions utilizam como modelo primário o modelo configurado em `GEMINI_MODEL` (default no código: `gemini-3.8-flash`; disponibilidade a confirmar), com fallback automático em caso de sobrecarga ou erro 503 para `gemini-3.7-flash` e, em última instância, fallback para sumarização estruturada determinística sem IA (`generated_without_ai = true`), sem eliminar possíveis falhas de rede, GitHub ou persistência.
 
 - [ ] **3. Agendamento Horário (Cron Job) Ativo:**
   No **SQL Editor** do Supabase, confirme se o agendamento horário está ativo:
   ```sql
   SELECT jobid, schedule, command, active FROM cron.job WHERE jobname = 'dispatch-reports-hourly';
   ```
-  *(Se a lista estiver vazia, aplique as instruções de `supabase/cron/schedule_dispatch.sql` descritas na Secção 5.6 do `docs/ARCHITECTURE.md`).*
+  *(Se a lista estiver vazia, aplique as instruções de `supabase/cron/schedule_dispatch.sql` descritas na Secção 5.6b do `docs/ARCHITECTURE.md`).*
 
 - [ ] **4. Webhook do Resend Configurado:**
   No painel do Resend em **Webhooks**:
@@ -63,7 +63,7 @@ Antes de iniciar qualquer ciclo, confirme a configuração de todos os component
 
 ### Passo 1.1: Onboarding e Configuração do Cliente Piloto
 1. Aceda à rota `/onboarding` da aplicação.
-2. Inicie a configuração com o assistente **PulseBot** (ou preencha o formulário rápido de configuração):
+2. Inicie a configuração com o assistente **PulseBot** (não existe formulário rápido alternativo):
    - Insira o GitHub PAT clássico.
    - Selecione o quadro do GitHub da equipa.
    - Configure o mapeamento das 3 categorias fundamentais:
@@ -111,14 +111,14 @@ Antes de iniciar qualquer ciclo, confirme a configuração de todos os component
 
 ### Passo 1.6: Receção e Acesso ao Portal (Sem Login)
 1. Abra a caixa de correio do destinatário e localize o e-mail enviado pelo ClientPulse AI.
-2. Verifique o assunto: `Relatório Semanal de Progresso — Semana <N> / <ANO>`.
+2. Verifique o assunto: `Relatório Semanal de Progresso — <empresa> (<period_end>)`.
 3. Verifique que o link no e-mail aponta estritamente para `/portal/<token>` e nunca para `?token=`.
 4. Clique no botão do e-mail para abrir o **Portal do Cliente**.
 5. No portal:
    - Confirme a visualização dos 3 blocos do relatório sem pedir palavra-passe ou login.
    - Verifique o histórico de relatórios anteriores.
    - Confirme a apresentação das métricas de entrega e gráfico de sprints.
-6. Aceda à base de dados ou ao Dashboard do profissional e confirme que o registo de abertura (`opened_at`) foi registado através do webhook do Resend ou do pixel de tracking.
+6. Aceda à base de dados ou ao Dashboard do profissional e confirme que o registo de abertura (`opened_at`) foi registado pela RPC do portal; webhook/pixel têm limitações de persistência sob RLS e devem ser verificados separadamente.
 
 ### O Que Registar no Ciclo 1:
 - [ ] Duração do processo de onboarding (segundos/minutos decorridos).
@@ -165,12 +165,11 @@ Invoke-RestMethod -Uri "https://<PROJECT_REF>.supabase.co/functions/v1/dispatch-
 1. Analise a resposta JSON do comando. Deverá indicar:
    ```json
    {
-       "status": "completed",
-       "processed": 1,
-       "sent": 1,
-       "drafted": 0,
+       "total_clients_found": 1,
+       "drafts_created": 1,
+       "auto_sent": 1,
        "skipped_duplicate": 0,
-       "errors": 0
+       "errors": []
    }
    ```
 2. Aceda à tabela `reports` no Supabase ou ao Dashboard:
@@ -179,17 +178,16 @@ Invoke-RestMethod -Uri "https://<PROJECT_REF>.supabase.co/functions/v1/dispatch-
    - Confirme que `time_to_approve_seconds = 0` (ou `null`).
 3. Confirme que o e-mail foi recebido imediatamente na caixa de entrada do cliente, sem retenção no estado `draft`.
 
-### Passo 2.5: Teste Crítico de Idempotência (Garantia de Envio Único)
+### Passo 2.5: Teste Crítico de Idempotência (Execuções Sequenciais; Concorrência Não Garantida)
 1. **Execute novamente o mesmo comando PowerShell** do Passo 2.3 (simulando uma segunda execução acidental do cron na mesma semana).
 2. Verifique a resposta da função:
    ```json
    {
-       "status": "completed",
-       "processed": 1,
-       "sent": 0,
-       "drafted": 0,
+       "total_clients_found": 1,
+       "drafts_created": 0,
+       "auto_sent": 0,
        "skipped_duplicate": 1,
-       "errors": 0
+       "errors": []
    }
    ```
 3. Confirme que:
@@ -234,17 +232,13 @@ Caso ocorra algum imprevisto durante os testes reais, siga os procedimentos desc
 - **Recuperação:**
   1. O gestor acede a `/dashboard/clients/[id]`.
   2. Clica na ação **"Renovar link do portal"**.
-  3. O sistema revoga o token antigo (`is_active = false, revoked_at = now()`) e gera um novo token seguro com 90 dias de validade.
+  3. O sistema revoga o token antigo (`is_active = false, revoked_at = now()`) e gera um novo token seguro com validade configurada (90 dias por defeito).
   4. O gestor pode copiar o novo link e facultá-lo diretamente ao cliente.
 
-### 5.5 Limpeza e Repetição do Teste
-Para repetir um ciclo de teste sem eliminar a conta da agência nem o cliente, execute o seguinte comando no SQL Editor do Supabase para arquivar ou remover apenas os relatórios da semana de teste:
+### 5.5 Repetição sem apagar dados
 
-```sql
--- Remove relatórios de teste e tokens associados para o cliente específico
-DELETE FROM public.reports 
-WHERE client_id = '<CLIENT_UUID>' 
-  AND week_label = 'Semana <N> / 2026';
+Usar outro cliente de teste ou a semana seguinte. Não apagar relatórios para contornar a idempotência; não executar limpeza em produção. O dispatcher seleciona todos os clientes do horário indicado, pelo que o projeto de testes deve conter exclusivamente destinatários autorizados.
 
--- Mantém a integridade referencial e o registo do cliente
-```
+Os exemplos JSON acima são campos esperados, não resultados observados; a resposta inclui ainda `evaluated_time`, `details` e `errors` como lista. `drafts_created` conta registos criados, incluindo os enviados automaticamente. A segunda chamada sequencial não prova proteção contra concorrência.
+
+Manter a configuração Resend existente e o modo de testes autorizado pelo professor. Não é necessário comprar domínio. Os E2E locais em [TESTING.md](TESTING.md) não contactam o Resend e não substituem estes dois ciclos reais.

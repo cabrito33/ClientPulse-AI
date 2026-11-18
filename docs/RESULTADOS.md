@@ -1,12 +1,12 @@
 # Resultados e Validação de Métricas — ClientPulse AI
 
-**Projeto:** ClientPulse AI — Relatórios Semanais de Progresso para Freelancers e Agências  
-**Documento:** Registo de evidências e métricas do MVP — resultados operacionais por confirmar  
-**Referência:** PRD v2.0 (Secção 7: Métricas de Sucesso e Critérios de Falha) e `docs/TESTE_REAL.md`  
-**Data de Execução dos Testes:** `[ A preencher: DD/MM/AAAA ]`  
-**Responsável pelo Teste:** `[ A preencher: Nome / Equipa ]`  
-**Ambiente de Execução:** `[ A preencher: Ex.: Supabase Cloud (rewurbzemhydcqhmornx) + Vercel ]`  
-**Repositório / Quadro de Teste:** `[ A preencher: Repositório GitHub e ID do ProjectV2 ]`  
+**Projeto:** ClientPulse AI — Relatórios Semanais de Progresso para Freelancers e Agências\
+**Documento:** Registo de evidências e métricas do MVP — resultados operacionais por confirmar\
+**Referência:** PRD v2.0 (Secção 7: Métricas de Sucesso e Critérios de Falha) e `docs/TESTE_REAL.md`\
+**Data de Execução dos Testes:** `[ A preencher: DD/MM/AAAA ]`\
+**Responsável pelo Teste:** `[ A preencher: Nome / Equipa ]`\
+**Ambiente de Execução:** `[ A preencher: Ex.: Supabase Cloud (rewurbzemhydcqhmornx) + Vercel ]`\
+**Repositório / Quadro de Teste:** `[ A preencher: Repositório GitHub e ID do ProjectV2 ]`\
 
 ---
 
@@ -35,7 +35,9 @@
 
 ---
 
-### Evidência operacional agregada — leitura de produção em 17/11/2026
+### Registo operacional anterior — não revalidado nesta auditoria
+
+O parágrafo seguinte já constava do documento. Foi preservado como registo histórico, sem nova consulta a produção nem evidência bruta local que permita repetir a verificação.
 
 A leitura agregada da base de dados registou **9 relatórios** (6 com estado `sent`, 2 `failed`, 1 `draft`), dos quais 2 tinham `opened_at`, e dois registos de onboarding com duração. O job de agendamento horário encontrava-se ativo. Os logs de entrega continham falhas relacionadas com restrições de domínio/remetente do Resend.
 
@@ -49,7 +51,7 @@ Execute as seguintes consultas no **SQL Editor** do Supabase para recolher os da
 Esta vista calcula automaticamente os indicadores-chave de desempenho por agência com base na telemetria recolhida:
 
 ```sql
-SELECT 
+SELECT
     agency_id,
     onboarding_duration_seconds,
     total_reports,
@@ -67,9 +69,10 @@ FROM public.success_metrics;
 Permite inspecionar cada relatório gerado, os tempos de aprovação e as edições efetuadas:
 
 ```sql
-SELECT 
+SELECT
     id,
-    week_label,
+    period_start,
+    period_end,
     status,
     edit_count,
     review_opened_at,
@@ -84,10 +87,10 @@ ORDER BY created_at DESC;
 ```
 
 ### Consulta 1.3: Auditoria de Magic Links e Acessos ao Portal (`portal_tokens`)
-Verifica o ciclo de vida dos tokens de acesso e os prazos de expiração (garantia dos 90 dias):
+Verifica o ciclo de vida dos tokens de acesso e os prazos de expiração (90 dias por defeito; NULL legado ainda aceite pela RPC):
 
 ```sql
-SELECT 
+SELECT
     client_id,
     is_active,
     expires_at,
@@ -105,15 +108,15 @@ Registo comparativo entre as **metas** do PRD v2.0 e os **valores que terão de 
 
 | Métrica de Sucesso | Meta no PRD (Alvo) | Valor Real Observado | Estado (Atingido / Não Atingido) | Notas e Observações |
 | :--- | :--- | :--- | :--- | :--- |
-| **Tempo de Onboarding** | < 5 minutos (< 300 s) | **Por medir** | **Não avaliado** | Medido entre `onboarding_started_at` e `onboarding_completed_at`. |
-| **Eficácia do Bot de Onboarding** | >= 85% de conclusão na 1.ª sessão | **Por medir** | **Não avaliado** | Utilizadores que completaram o setup através do assistente conversacional. |
+| **Tempo de Onboarding** | < 5 minutos (< 300 s) | **Por medir** | **Não avaliado** | A telemetria termina antes da geração; medir também o primeiro relatório com cronómetro para validar a meta completa. |
+| **Eficácia do Bot de Onboarding** | > 85% de conclusão na 1.ª sessão | **Por medir** | **Não avaliado** | Utilizadores que completaram o setup através do assistente conversacional. |
 | **Tempo de Preparação Semanal** | < 10 min por cliente/semana | **Por medir** | **Não avaliado** | Tempo total incluindo geração, revisão e aprovação. |
-| **Tempo ativo de revisão** | < 2 minutos (< 120 s) | **Por medir** | **Não avaliado** | Média de `time_to_approve_seconds` nos relatórios aprovados (calculado desde `review_opened_at` até `approved_at`, ignorando tempo parado). |
+| **Intervalo de revisão (diagnóstico adicional)** | < 2 minutos (não é meta original do PRD) | **Por medir** | **Não avaliado** | Média de `time_to_approve_seconds` nos relatórios aprovados (calculado desde `review_opened_at` até `approved_at`, incluindo eventual tempo parado). |
 | **Média de Edições por Rascunho** | < 3 linhas por rascunho | **Por medir** | **Não avaliado** | Campo `avg_edit_count` na vista `success_metrics`. |
 | **Rascunhos com < 3 Edições** | >= 80% dos relatórios | **Por medir** | **Não avaliado** | Campo `pct_approved_under_3_edits`. |
-| **Precisão da IA (Medição Manual)** | >= 80% das tarefas refletidas | **Por medir** | **Não avaliado** | Tarefas do quadro representadas fielmente sem alucinações. |
-| **Taxa de Abertura em 24h** | >= 70% das mensagens enviadas | **Por medir** | **Não avaliado** | Indicativo (rastreio de abertura via webhook / pixel). |
-| **Taxa de Fallback sem IA** | < 5% de falhas da IA | **Por medir** | **Não avaliado** | Percentagem de relatórios gerados via modo determinístico. |
+| **Precisão da IA (Medição Manual)** | > 80% das tarefas refletidas | **Por medir** | **Não avaliado** | Tarefas do quadro representadas fielmente sem alucinações. |
+| **Taxa de Abertura em 24h** | > 70% das mensagens enviadas | **Por medir** | **Não avaliado** | Indicativo: portal/previews podem marcar abertura; webhook/pixel têm limitações de RLS. Não prova leitura humana. |
+| **Taxa de Fallback sem IA (diagnóstico adicional)** | < 5% (não é meta original do PRD) | **Por medir** | **Não avaliado** | Percentagem de relatórios gerados via modo determinístico. |
 
 **Como preencher:** acrescentar o valor, unidade, tamanho da amostra (`n`), período e fonte de evidência. `success_metrics` ajuda a extrair telemetria, mas não substitui a contagem manual de tarefas corretas nem um cronómetro para medir o processo completo. A eficácia do bot requer uma amostra de utilizadores identificada e contabilizada; aberturas de e-mail são indicativas e podem sofrer falsos positivos. Se uma métrica não for recolhível, registar **não medido** e explicar porquê.
 ---

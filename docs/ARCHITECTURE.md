@@ -32,7 +32,7 @@ flowchart TB
             FnApproveSend["/approve-and-send\n(Review, Update & Resend Dispatch)"]
             FnPortalData["/client-portal-data\n(Token-Authenticated Public API)"]
             FnDispatchCron["/dispatch-scheduled-reports\n(Cron Batch Dispatcher)"]
-            
+\
             subgraph Shared_Modules["_shared/ (Reusable Helpers)"]
                 ModCors["cors.ts"]
                 ModClient["supabaseClient.ts"]
@@ -58,7 +58,8 @@ flowchart TB
     AgencyUser -->|6. Approve & Send Report| FnApproveSend
 
     %% Portal Interactions
-    EndClient -->|7. Open Portal via Link with Token| FnPortalData
+    EndClient -->|7. Open /portal/token| NextApp
+    NextApp["Next.js Server /portal/token"] -->|Token-validating RPC| PgDatabase
 
     %% Function External Calls
     FnOnboarding -->|Validate PAT & Query Board| GitHubAPI
@@ -69,14 +70,16 @@ flowchart TB
     FnGenerate -->|Store Draft Report & Tasks| PgDatabase
     FnApproveSend -->|Update Status & Send Email| ResendAPI
     FnApproveSend -->|Fetch Client & Token| PgDatabase
-    FnPortalData -->|Fetch Client, Reports & Metrics (service_role)| PgDatabase
+    FnPortalData -->|Token-validating RPC| PgDatabase
     ResendAPI -->|Deliver HTML Email with Token Link| EndClient
 
     %% Automated Dispatcher
     PgCron -->|Triggers at scheduled hour| PgNet
-    PgNet -->|HTTP POST with Service Key| FnDispatchCron
+    PgNet -->|HTTP POST with Scheduled Secret| FnDispatchCron
     FnDispatchCron -->|Query Due Clients| PgDatabase
-    FnDispatchCron -->|Trigger Generation / Auto-Send| FnGenerate
+    FnDispatchCron -->|Read task metadata| GitHubAPI
+    FnDispatchCron -->|Synthesize report| GeminiAPI
+    FnDispatchCron -->|Optional automatic send| ResendAPI
 ```
 
 ---
@@ -91,7 +94,7 @@ To keep development manageable for 1–2 developers, the backend is strictly div
 | **GitHub Integration** | `supabase/functions/github-sync/` & `_shared/github.ts` | Validates GitHub PATs, executes GraphQL queries against Projects v2 (user & org levels), and maps custom board columns to standard status categories (`done`, `in_progress`, `blocked`). |
 | **AI Report Engine** | `supabase/functions/generate-report/` & `_shared/gemini.ts` | Builds few-shot prompts with task metadata, invokes Google Gemini with strict structured JSON schemas, validates response integrity, and stores 3-block reports. |
 | **Approval & Dispatch** | `supabase/functions/approve-and-send/` & `_shared/resend.ts` | Allows the agency manager to modify the draft, marks report status as `approved`/`sent`, generates responsive HTML email, and dispatches via Resend. |
-| **Zero-Login Portal** | `supabase/functions/client-portal-data/` | Public HTTP endpoint that accepts a client UUID token, validates it against `clients.portal_token`, and returns the latest report, historical archive, and sprint velocity data. |
+| **Zero-Login Portal** | `src/app/portal/[token]/page.tsx` and `supabase/functions/client-portal-data/` | Next SSR and the optional Edge API call `get_portal_data_by_token`, validating `portal_tokens` and publishing sent reports. |
 | **Scheduling Engine** | `supabase/functions/dispatch-scheduled-reports/` | Hourly batch job invoked by `pg_cron` via `pg_net`. Scans `clients` for matching schedule windows, initiates report generation, and handles automatic direct sending (`auto_send_enabled`). |
 | **Onboarding Chat** | `supabase/functions/onboarding-chat/` | Conversational assistant powered by Gemini. Guides the user step-by-step through generating a GitHub PAT, verifying permissions, and creating their first client profile. |
 
@@ -114,7 +117,7 @@ sequenceDiagram
     participant Sched as pg_cron / Dispatcher
     participant Email as Resend API
     actor Client as End Client
-    participant Portal as /client-portal-data
+    participant Portal as Next /portal/token
 
     %% Stage 1: Setup
     Note over Manager,GH: Stage 1: Client Setup & Board Mapping
@@ -152,8 +155,8 @@ sequenceDiagram
 
     %% Stage 5: Zero-Login Portal Access
     Note over Client,Portal: Stage 4: Client Portal Access
-    Client->>Portal: GET /client-portal-data?token=UUID
-    Portal->>DB: Query Client, Latest Report, History & Velocity (service_role)
+    Client->>Portal: GET /portal/UUID
+    Portal->>DB: RPC get_portal_data_by_token (validated token)
     DB-->>Portal: Valid Data
     Portal-->>Client: Render Read-Only Dashboard & Sprint Chart
 ```
@@ -163,7 +166,7 @@ sequenceDiagram
 ## 5. Authentication & Security Architecture
 
 ### 5.1 Agency Authentication (Supabase Auth)
-- Agency managers authenticate using standard Supabase Auth (Email + Password or OAuth).
+- Agency managers authenticate using standard Supabase Auth (Email + Password; OAuth is not implemented).
 - Upon successful authentication, Supabase returns a JSON Web Token (JWT) containing the user's `auth.uid()`.
 - Every Edge Function invoked by the agency dashboard validates this JWT using `supabase.auth.getUser()`.
 
@@ -186,7 +189,7 @@ sequenceDiagram
 - **Fail-Closed Validation:** Access is strictly granted only when the UUID token exists in the `portal_tokens` table with:
   - `is_active = true`
   - `revoked_at IS NULL`
-  - `expires_at > now()` (Default validity of 90 days, configurable via `PORTAL_TOKEN_EXPIRATION_DAYS`).
+  - `expires_at IS NULL OR expires_at > now()` in the current data RPC. New tokens default to 90 days; legacy NULL expiry is still accepted. The open-tracking RPC requires non-NULL expiry; this inconsistency remains pending.
 - If any check fails, the RPC returns `NULL`. The helper `check_portal_token_status(UUID)` identifies whether the link was revoked, expired, or invalid to render a friendly, secure explanation in the UI.
 - **Token Revocation & Renewal:** Agency managers can revoke the active token and generate a fresh 90-day magic link directly from the client details page via "Renovar link do portal".
 
@@ -208,12 +211,12 @@ sequenceDiagram
 - **Key Storage:** Read strictly inside Edge Functions via `Deno.env.get('PAT_ENCRYPTION_KEY')` (never exposed to browser, frontend or logged).
 - **Column-Level Security (CLS) Protection (Migration 010):** The `authenticated` role is explicitly restricted so that browsers can never query `pat_token` or `pat_token_encrypted`. Only non-sensitive columns (`id, agency_id, github_username, is_valid, last_synced_at, created_at`) are selectable by clients.
 
-### 5.6 Resend Webhooks & Email Open Tracking (BE-21)
+### 5.6a Resend Webhooks & Email Open Tracking (BE-21)
 - **Webhook Verification:** The `/api/webhooks/resend` endpoint verifies the standard Svix signature headers (`svix-id`, `svix-timestamp`, `svix-signature`) with HMAC-SHA256 against `RESEND_WEBHOOK_SECRET`. Unsigned or mismatched requests are rejected immediately with HTTP 401.
 - **Server-Side Timestamp Enforcement:** The tracking pixel endpoint `/api/track/open` strictly ignores any timestamps supplied in request bodies or query parameters, using only server-generated timestamps (`new Date().toISOString()`).
 - **Privacy & Proxy Disclosure:** Email open tracking via 1x1 GIF pixels and webhooks is indicative due to privacy features such as Apple Mail Privacy Protection (MPP) and pre-fetching proxy filters.
 
-### 5.6 Produção: Configuração Segura do Agendamento (pg_cron, pg_net e Supabase Vault)
+### 5.6b Produção: Configuração Segura do Agendamento (pg_cron, pg_net e Supabase Vault)
 Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.sql`), o agendamento em produção utiliza o **Supabase Vault** em conjunto com a extensão `pg_net` e `pg_cron`:
 
 1. **Gerar o segredo partilhado:**
@@ -396,7 +399,7 @@ Para evitar expor segredos em ficheiros de migração SQL (`002_cron_scheduler.s
 | :--- | :--- | :--- | :--- |
 | **Gemini Hallucinations or Schema Deviation** | Reports contain invented tasks or invalid formatting. | Medium | Use Gemini Flash (default: `gemini-3.8-flash`, configurable via `GEMINI_MODEL`) with structured output schemas (`responseSchema: { type: "OBJECT", properties: {...} }`). Set `temperature: 0.2` and inject strict system instructions: *"Only summarize tasks present in the input JSON. Never invent features or milestones."* |
 | **Data Privacy & Leakage to External AI** | Sensitive business or code data exposed to external LLMs. | Medium | Strict data minimization (`minimizeTaskForAI` in `_shared/gemini.ts`): only `title`, `description` (code stripped, max 300 chars), `status`, `labels`, `assignee` are sent. Zero source code access. Visible UI disclaimers and human-in-the-loop review. Full policy documented in [`docs/PRIVACY.md`](PRIVACY.md). |
-| **Resend Free-Tier Domain Limits** | Cannot send emails to external client domains during testing. | High | Implement a **Mock/Preview Mode** in `resend.ts`: when running in development or without a custom domain, log the rendered email HTML to Supabase Studio or send only to the developer's registered email (`onboarding@resend.dev`). |
+| **Resend Free-Tier Domain Limits** | Cannot send emails to external client domains during testing. | High | Use the existing authorized test sender/recipient configuration. Missing credentials and rejected sends fail explicitly; there is no automatic success/preview fallback. No Resend changes are part of this audit. |
 | **GitHub GraphQL API Quota & Changes** | GraphQL queries fail or rate-limit the agency account. | Low | Query only necessary fields (`title`, `state`, `assignees`, `labels`, `updatedAt`, `closedAt`) with pagination limits (`first: 100`). Cache raw responses in `reports.raw_github_data`. |
 | **`pg_cron` UTC Scheduling Offsets** | Reports generate at the wrong hour due to timezone differences. | Medium | Store all schedule definitions with an explicit UTC hour (`schedule_hour_utc: 9`). Document for the user that 09:00 UTC corresponds to 10:00 Lisbon/London time (or 09:00 WET). |
 | **Small Team Bottleneck (1–2 Developers)** | Overengineering leads to incomplete MVP features at week 5. | High | Rely on standard Supabase conventions (no custom Docker containers, no complex microservices). Keep Edge Functions focused on single tasks and share common logic through `_shared/`. |
@@ -423,7 +426,8 @@ Este comando executa em cadeia:
 1. `npm run lint` (ESLint)
 2. `npx tsc --noEmit` (Verificação de tipos TypeScript)
 3. `npm run check:use-server` (Validação de exportações em módulos Server Actions)
-4. `cross-env NEXT_DIST_DIR=.next-check next build` (Build de produção isolado em `.next-check`, sem colidir com instâncias ativas de `npm run dev`)
+4. `npm test` (local automated scripts; external providers and RLS are not exercised)
+5. `cross-env NEXT_DIST_DIR=.next-check next build` (Build de produção isolado em `.next-check`, sem colidir com instâncias ativas de `npm run dev`)
 
 ### 8.2 Regras Estritas para Ficheiros `"use server"`
 Nos módulos que contêm a diretiva `"use server"` no topo (Server Actions, ex.: `src/app/actions/*.ts`):
@@ -431,3 +435,16 @@ Nos módulos que contêm a diretiva `"use server"` no topo (Server Actions, ex.:
 - **Tipos e interfaces TypeScript são permitidos:** `export type ...`, `export interface ...`.
 - **Proibido exportar constantes ou valores:** `export const`, `export let`, `export var`, `export default`, `export class` ou funções síncronas são rejeitados pelo compilador do Next.js com o erro: *"Only async functions are allowed to be exported in a 'use server' file"*.
 - **Constantes de Configuração:** Configurações como `maxDuration`, `dynamic`, `revalidate` pertencem exclusivamente a ficheiros de rota (`route.ts`), página (`page.tsx`) ou layout (`layout.tsx`), **NUNCA** a ficheiros de Server Actions (`"use server"`).
+
+## 9. Audit boundaries — 2026-11-17
+
+The diagrams describe application code, not a newly observed production run. Fifteen migrations exist (001–013 plus two security migrations); see [DATABASE.md](DATABASE.md). The existing security RPC migrations were reviewed, not recreated or deployed.
+
+- CORS is a browser policy, not caller authentication. Management functions validate JWT/agency or scheduled secret.
+- Weekly lookup prevents sequential duplicates but has no atomic claim/unique delivery key. Concurrent jobs and a send followed by a failed write can duplicate email. Manual approval also lacks a repeated-send guard.
+- Next webhook signatures are checked, but webhook/pixel database writes use a user-scoped client and may fail under anonymous RLS. The legacy `email-tracking` Edge Function is a separate privileged path requiring hardening. Portal loads/previews may count as opens; they do not prove human receipt.
+- Portal RPC returns only sent report text, but its client projection and metrics remain broader than necessary. Legacy NULL expiry and non-atomic renewal need migration/transaction review. The latest migration restricts SQL function execution and search paths; this is not proof of complete tenant isolation.
+- `minimizeTaskForAI` limits task fields, while prompts also receive client context and manager notes. Free text may contain sensitive data. Model names in source are defaults, not proof of provider availability.
+- `sprint_metrics.sprint` uses Snn without an ISO year. Read-time deletion was removed; a reviewed year-aware migration is still needed.
+
+See [FINAL_AUDIT.md](FINAL_AUDIT.md) for causes, impacts and proposed resolutions; [TESTING.md](TESTING.md) separates executable evidence from remaining validation.

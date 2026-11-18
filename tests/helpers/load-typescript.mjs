@@ -8,15 +8,15 @@ export function loadTypeScript(file, dependencies = {}, globals = {}) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
     fileName: file,
   });
-  const module = { exports: {} };
+  const loaded = { exports: {} };
   const require = (name) => {
     if (!(name in dependencies)) throw new Error(`Unexpected dependency: ${name}`);
     return dependencies[name];
   };
   new Function('require', 'module', 'exports', ...Object.keys(globals), outputText)(
-    require, module, module.exports, ...Object.values(globals),
+    require, loaded, loaded.exports, ...Object.values(globals),
   );
-  return module.exports;
+  return loaded.exports;
 }
 
 export function fakeDatabase(resolve) {

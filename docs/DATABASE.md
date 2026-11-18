@@ -252,7 +252,7 @@ TO authenticated
 USING (agency_id IN (SELECT id FROM agencies WHERE user_id = auth.uid()))
 WITH CHECK (agency_id IN (SELECT id FROM agencies WHERE user_id = auth.uid()));
 ```
-*Plain English:* Agency managers have full CRUD rights over their reports. Clients access their reports through the secure `/client-portal-data` Edge Function.
+*Plain English:* Agency managers have full CRUD rights over their reports. Clients access sent reports through the token-validating RPC, called by Next SSR or the Edge endpoint.
 
 ---
 
@@ -347,7 +347,7 @@ Tabela dedicada à gestão de tokens de portal com suporte a revogação, expira
 O acesso ao portal público utiliza a função `SECURITY DEFINER` `get_portal_data_by_token(UUID)` que valida:
 1. `is_active = true`
 2. `revoked_at IS NULL`
-3. `expires_at > now()`
+3. `expires_at IS NULL OR expires_at > now()` (legacy NULL allowed; pending hardening)
 Se qualquer uma das condições falhar, o RPC retorna `NULL`. A função auxiliar `check_portal_token_status(UUID)` devolve `'valid'`, `'expired'`, `'revoked'`, ou `'not_found'` para apresentação de mensagens contextuais seguras no frontend.
 
 **Renovação no Dashboard:**
@@ -440,24 +440,15 @@ agency_id = public.get_my_agency_id()
 agency_id = public.get_my_agency_id()
 ```
 
-### 5.4 Acesso ao Portal do Cliente (Anónimo)
+### 5.4 Anonymous portal access (current implementation)
 
-O portal do cliente acede a dados **sem login Supabase**. A arquitectura de segurança é:
+The Next server-rendered `/portal/[token]` route calls `get_portal_data_by_token(UUID)`. The optional `client-portal-data` Edge endpoint calls the same RPC. Migration 005 removed direct anonymous table SELECT; the old anonymous policies from 004 are not an active second line of defence.
 
-```
-Browser (anon) → Edge Function client-portal-data
-                  ↓ valida portal_token na BD
-                  ↓ usa service_role (bypass RLS)
-                  → retorna apenas dados do cliente
-```
-
-As políticas `anon` nas tabelas `clients`, `reports`, `sprint_metrics` e `report_tasks` são uma **segunda linha de defesa** caso a `anon key` seja exposta directamente ao browser. Usam a tabela `portal_tokens` para validar:
-- Token activo (`is_active = true`)
-- Token não expirado (`expires_at IS NULL OR expires_at > now()`)
+The RPC validates an active, non-revoked token, accepting future **or NULL** expiry, and publishes only `sent` report text. The latest security migration removes raw GitHub data and delivery identifiers. It still returns broader client metadata and metrics; see the residual risks in [FINAL_AUDIT.md](FINAL_AUDIT.md). `record_portal_report_open` requires a future, non-NULL expiry.
 
 ### 5.5 Como Testar o Isolamento RLS
 
-Executar o script completo de testes no Supabase SQL Editor:
+Executar o script completo apenas numa base de dados local/de testes descartável:
 
 **Ficheiro:** [`supabase/tests/rls_isolation_test.sql`](../supabase/tests/rls_isolation_test.sql)
 
@@ -476,24 +467,34 @@ WHERE pg_namespace.nspname = 'public' AND relkind = 'r'
 ORDER BY relname;
 ```
 
-**Testes cobertos pelo script:**
-1. ✅ Utilizador A vê os seus próprios clientes
-2. ✅ Utilizador B NÃO vê clientes da Agência A
-3. ✅ Utilizador B NÃO vê relatórios da Agência A
-4. ✅ Utilizador B NÃO vê o registo `agencies` da Agência A
-5. ✅ Utilizador B NÃO consegue fazer UPDATE em dados da Agência A
-6. ✅ Utilizador A vê os seus próprios relatórios
-7. ✅ `get_my_agency_id()` retorna o `agency_id` correcto
-8. ✅ Visitante anónimo acede ao portal via token válido (`get_portal_data_by_token`)
-9. ✅ Visitante anónimo com token inexistente/inválido é rejeitado (`NULL`)
-10. ✅ Visitante anónimo não consegue fazer `SELECT` direto às tabelas
+**Checks defined, not results of execution:** agency A/B read and update isolation (1–7); valid/invalid token and anonymous direct SELECT (8–10); encrypted PAT column denial and permitted integration fields (11–12); audit log isolation, write denial and trigger logging (13–15).
 
-### 5.6 Ficheiros de Migração
+### 5.6 Migration inventory (15 files)
 
-| Ficheiro | Tabelas / Funcionalidades Cobertas |
+The ordered SQL files are authoritative; earlier snippets describe individual migrations and are not a replacement for applying the full chain to a fresh test database.
+
+| Migration | File |
 | :--- | :--- |
-| `supabase/migrations/001_initial_schema.sql` | `agencies`, `github_integrations`, `clients`, `reports`, `report_tasks` |
-| `supabase/migrations/003_be_01_complete_schema.sql` | `profiles`, `sprint_metrics`, `portal_tokens`, `delivery_logs` |
-| `supabase/migrations/004_be_02_rls_policies.sql` | Completude: `get_my_agency_id()`, INSERT em `agencies`/`profiles`, correcções |
-| `supabase/migrations/005_be_02_portal_rpc.sql` | RPC `get_portal_data_by_token` (SECURITY DEFINER) + revogação de SELECT direto para anon |
-| `supabase/migrations/006_be_25_sprint_metrics.sql` | Constraint UNIQUE (client_id, sprint), triggers de cálculo automático a partir de `reports` e `report_tasks`, RPC `sync_client_sprint_metrics` |
+| `001_initial_schema` | [SQL](../supabase/migrations/001_initial_schema.sql) |
+| `002_cron_scheduler` | [SQL](../supabase/migrations/002_cron_scheduler.sql) |
+| `003_be_01_complete_schema` | [SQL](../supabase/migrations/003_be_01_complete_schema.sql) |
+| `004_be_02_rls_policies` | [SQL](../supabase/migrations/004_be_02_rls_policies.sql) |
+| `005_be_02_portal_rpc` | [SQL](../supabase/migrations/005_be_02_portal_rpc.sql) |
+| `006_be_25_sprint_metrics` | [SQL](../supabase/migrations/006_be_25_sprint_metrics.sql) |
+| `007_be_19_encrypt_pat` | [SQL](../supabase/migrations/007_be_19_encrypt_pat.sql) |
+| `008_be_21_opened_at` | [SQL](../supabase/migrations/008_be_21_opened_at.sql) |
+| `009_be_19_magic_links` | [SQL](../supabase/migrations/009_be_19_magic_links.sql) |
+| `010_restrict_pat_access` | [SQL](../supabase/migrations/010_restrict_pat_access.sql) |
+| `011_be_29_success_metrics` | [SQL](../supabase/migrations/011_be_29_success_metrics.sql) |
+| `012_project_title_and_active_review_time` | [SQL](../supabase/migrations/012_project_title_and_active_review_time.sql) |
+| `013_be_04_audit_logs` | [SQL](../supabase/migrations/013_be_04_audit_logs.sql) |
+| `20261117201502_secure_rpc_portal_and_privileges` | [SQL](../supabase/migrations/20261117201502_secure_rpc_portal_and_privileges.sql) |
+| `20261117202004_harden_function_search_path_and_fk_indexes` | [SQL](../supabase/migrations/20261117202004_harden_function_search_path_and_fk_indexes.sql) |
+
+### 5.7 Later schema and validation boundaries
+
+Migration 011 adds onboarding timestamps, report editing/approval telemetry and `success_metrics`; 012 adds `github_project_title` and `review_opened_at` and updates the view/RPC; 013 adds audit logging. The view is `security_invoker`, so its caller's RLS applies. Consult these migrations for the complete later-column dictionary.
+
+The SQL isolation script contains 15 checks, now wrapped in BEGIN/ROLLBACK with generated test IDs. Permission-denied cases no longer catch their own failure assertions. Run only against a disposable local/test database. No PostgreSQL/Docker runtime was available in this audit, so SQL checks are **not executed** and no 10/10 or 15/15 result is claimed.
+
+RLS checks agency ownership, but separate foreign keys do not prove that each referenced client/report belongs to that same agency. Composite tenant foreign keys, tighter portal projection, NULL-expiry policy and year-aware sprint keys require a reviewed migration and real SQL regressions. No production schema was changed.

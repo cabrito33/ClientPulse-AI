@@ -626,7 +626,7 @@ export default function OnboardingPage() {
             <p className="mt-2.5 flex items-center gap-1.5 text-[11px] text-muted-soft">
               <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" />
               <span>
-                <strong>Aviso de Privacidade:</strong> O PulseBot e a geração de relatórios utilizam IA externa (Google Gemini). Apenas metadados de tarefas são processados; nenhum código-fonte é acedido ou armazenado.
+                <strong>Aviso de Privacidade:</strong> O PulseBot e os relatórios utilizam IA externa (Google Gemini): mensagens, metadados de tarefas e contexto do cliente. A integração não lê ficheiros de código. Evita dados sensíveis nos textos.
               </span>
             </p>
           </div>

@@ -37,8 +37,8 @@ function matches(row, params) {
 reset();
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1:54329');
-  res.setHeader('Access-Control-Allow-Origin', 'http://127.0.0.1:3100');
-  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3100');
+  res.setHeader('Access-Control-Allow-Headers', 'authorization, apikey, content-type, x-client-info, x-supabase-api-version');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,HEAD,OPTIONS');
   res.setHeader('Access-Control-Expose-Headers', 'Content-Range');
   const send = (data, status = 200) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(data)); };
@@ -75,7 +75,7 @@ const server = http.createServer(async (req, res) => {
     if (fn === 'github-sync') return send(body.action === 'list-projects'
       ? { owner: 'fixture-user', projects: [{ id: 'PVT_fixture', number: 1, title: 'Fixture Project', closed: false }] }
       : scenario.columnsFail ? { error: 'Simulated column lookup failure' } : { projectTitle: 'Fixture Project', columns: [{ name: 'Todo' }, { name: 'In Progress' }, { name: 'Done' }] }, scenario.columnsFail && body.action === 'fetch-columns' ? 503 : 200);
-    if (fn === 'generate-report') { tables.reports = [makeReport()]; tables.sprint_metrics = [{ sprint: 'S47', label: 'Semana 47', completed: 1, planned: 2 }]; return send({ report_id: ids.report, status: 'draft' }, 201); }
+    if (fn === 'generate-report') { tables.reports = [makeReport()]; tables.sprint_metrics = [{ client_id: ids.client, agency_id: ids.agency, sprint: 'S47', label: 'Semana 47', completed: 1, planned: 2 }]; return send({ report_id: ids.report, status: 'draft' }, 201); }
     if (fn === 'approve-and-send') {
       Object.assign(tables.reports[0], { status: 'sent', sent_at: timestamp }, body.updated_blocks ? { summary_done: body.updated_blocks.done, summary_blockers: body.updated_blocks.blockers, summary_next_steps: body.updated_blocks.next_steps } : {});
       return send({ success: true, report_id: ids.report, status: 'sent', is_mock_delivery: true });
@@ -88,7 +88,13 @@ const server = http.createServer(async (req, res) => {
     let rows = tables[table].filter(r => matches(r, url.searchParams));
     if (req.method === 'POST') {
       const additions = (Array.isArray(body) ? body : [body]).map(r => table === 'clients' ? { ...makeClient(), ...r } : r);
-      tables[table].push(...additions); rows = additions;
+      const conflict = url.searchParams.get('on_conflict')?.split(',');
+      for (const addition of additions) {
+        const existing = conflict && tables[table].find(row => conflict.every(key => row[key] === addition[key]));
+        if (existing) Object.assign(existing, addition);
+        else tables[table].push(addition);
+      }
+      rows = additions;
     }
     if (req.method === 'PATCH') for (const row of rows) Object.assign(row, body);
     if (req.method === 'DELETE') { tables[table] = tables[table].filter(r => !rows.includes(r)); rows = []; }

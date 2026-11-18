@@ -10,9 +10,18 @@ async function capture(page: Page, name: string, info: TestInfo) {
   await page.evaluate(() => document.fonts.ready);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   if (process.env.CAPTURE_UI !== '1') return;
+  // Recharts animates with JavaScript (1500ms), outside screenshot CSS animation controls.
+  for (const chart of await page.locator('.recharts-wrapper').all()) {
+    await chart.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(1700);
+  }
+  await page.evaluate(() => window.scrollTo(0, 0));
   const directory = `docs/UI/${name}`;
   await fs.mkdir(directory, { recursive: true });
-  await page.screenshot({ path: `${directory}/${info.project.name}.png`, fullPage: true, animations: 'disabled' });
+  // Chromium can transiently reject a tall full-page capture; retry only artifact capture.
+  await expect(async () => {
+    await page.screenshot({ path: `${directory}/${info.project.name}.png`, fullPage: true, animations: 'disabled' });
+  }).toPass({ timeout: 5000 });
   // DOM snapshot of the running implementation, not a design-tool export.
   // Drop executable scripts, Next serialized payloads and development overlays.
   const html = await page.evaluate(() => {
@@ -93,6 +102,8 @@ test('Onboarding through report approval and public portal using local substitut
   await page.goto(`/dashboard/clients/${clientId}`);
   await expect(page.getByRole('button', { name: 'Gerar relatório agora' })).toBeVisible();
   await capture(page, 'client-detail', info);
+  // Leave the protected page before clearing auth to avoid racing its RSC refresh.
+  await page.goto('/');
   await page.context().clearCookies();
   await page.goto(`/portal/${token}`);
   await expect(page.getByRole('heading', { name: 'Relatório Semanal de Progresso' })).toBeVisible();
@@ -104,7 +115,7 @@ test('Onboarding through report approval and public portal using local substitut
 test('Column lookup failure blocks onboarding instead of silently advancing', async ({ page, request }) => {
   await request.post(`${fixture}/__test/reset`, { data: { connected: true, columnsFail: true } });
   await login(page, '/onboarding');
-  await expect(page.getByRole('alert')).toContainText('Simulated column lookup failure');
+  await expect(page.getByRole('alert').filter({ hasText: 'Simulated column lookup failure' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Continuar', exact: true })).toBeDisabled();
 });
 

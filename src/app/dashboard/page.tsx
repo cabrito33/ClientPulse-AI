@@ -533,7 +533,7 @@ export default async function DashboardPage() {
               Métricas de sucesso (MVP)
             </h2>
             <p className="text-[11.5px] text-muted-soft">
-              Indicadores de eficiência, adoção e precisão da IA medidos no teste real
+              Telemetria de utilização para apoiar a validação das metas do MVP
             </p>
           </div>
           <Badge tone="teal" dot>
@@ -567,11 +567,11 @@ export default async function DashboardPage() {
           </div>
 
           <div className="rounded-xl border border-line/70 bg-paper/50 p-3">
-            <p className="text-[10.5px] font-medium uppercase text-muted">Tempo ativo de revisão</p>
+            <p className="text-[10.5px] font-medium uppercase text-muted">Intervalo de revisão</p>
             <p className="font-display mt-1 text-xl text-ink">
               {formatDuration(successMetrics?.avgTimeToApproveSeconds)}
             </p>
-            <p className="text-[10px] text-muted-soft">Meta PRD: &lt; 2 min</p>
+            <p className="text-[10px] text-muted-soft">Indicador adicional; inclui pausas</p>
           </div>
 
           <div className="rounded-xl border border-line/70 bg-paper/50 p-3">
@@ -592,7 +592,7 @@ export default async function DashboardPage() {
         </div>
 
         <p className="mt-3 text-right text-[11px] italic text-muted-soft">
-          * valores indicativos, medidos no teste real
+          * telemetria indicativa; não comprova, por si só, as metas do PRD
         </p>
       </section>
 
