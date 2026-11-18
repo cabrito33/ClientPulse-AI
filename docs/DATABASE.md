@@ -404,13 +404,15 @@ Tabela de auditoria imutável que regista eventos operacionais críticos da agê
 | :--- | :---: | :--- | :---: |
 | `agencies` | ✅ | SELECT, INSERT, UPDATE (próprio `user_id`) | ❌ |
 | `github_integrations` | ✅ | SELECT, ALL (via `agency_id`) | ❌ |
-| `clients` | ✅ | SELECT, INSERT, UPDATE, DELETE (via `agency_id`) | SELECT via portal token |
-| `reports` | ✅ | SELECT, INSERT, UPDATE, DELETE (via `agency_id`) | SELECT via portal token |
-| `report_tasks` | ✅ | ALL (via `report.agency_id`, com WITH CHECK) | SELECT via portal token |
+| `clients` | ✅ | SELECT, INSERT, UPDATE, DELETE (via `agency_id`) | Dados via RPC validada por token; sem `SELECT` direto |
+| `reports` | ✅ | SELECT, INSERT, UPDATE, DELETE (via `agency_id`) | Relatórios enviados via RPC; sem `SELECT` direto |
+| `report_tasks` | ✅ | ALL (via `report.agency_id`, com WITH CHECK) | Contagens agregadas pela RPC; sem `SELECT` direto |
 | `profiles` | ✅ | SELECT, INSERT, UPDATE (próprio `id`) | ❌ |
-| `sprint_metrics` | ✅ | SELECT, ALL (via `agency_id`) | SELECT via portal token |
+| `sprint_metrics` | ✅ | SELECT, ALL (via `agency_id`) | Métricas via RPC; sem `SELECT` direto |
 | `portal_tokens` | ✅ | ALL (via `agency_id`) | ❌ |
 | `delivery_logs` | ✅ | SELECT, INSERT (via `agency_id`) + UPDATE via `service_role` | ❌ |
+
+**Nota de segurança (18/11/2026):** o acesso anónimo ao portal utiliza uma função SQL `SECURITY DEFINER` que valida o token, não permissões de leitura direta (`SELECT`) da role `anon` sobre as tabelas. RLS encontra-se ativo nas tabelas públicas, mas as chaves estrangeiras independentes não garantem por si só o alinhamento de `agency_id`/`client_id`/`report_id`. Uma verificação de leitura do estado atual devolveu zero divergências nas cinco relações examinadas; isso não substitui os testes adversariais de isolamento nem uma futura restrição de integridade composta. Ver [FINAL_AUDIT.md](FINAL_AUDIT.md).
 
 ### 5.2 Função Auxiliar `get_my_agency_id()`
 
