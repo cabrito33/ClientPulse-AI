@@ -10,6 +10,14 @@ Projeto desenvolvido no âmbito da unidade curricular de **Desenvolvimento de So
 
 ---
 
+## Estado de publicação verificado (18/11/2026)
+
+- PR [#60](https://github.com/cabrito33/ClientPulse-AI/pull/60) integrado na `Main` no commit `a081dd64a0034fc6460bd27c5d640dd7f372ea43`.
+- Vercel: aplicação em produção (`READY`) no commit indicado; workflow de CI da `Main` aprovado.
+- Supabase: `generate-report` **versão 32 ativa, JWT ativado**. O código publicado e os sete módulos importados foram comparados com a `Main`; o erro anterior de `currentIso.week` foi eliminado. As sete Edge Functions estão ativas e as 15 migrações estão aplicadas.
+- **Limite da validação:** isto demonstra publicação e consistência de código, não dois ciclos reais concluídos, envio de mensagens, precisão de Gemini, isolamento entre agências ou ausência de duplicações em concorrência. Ver [TESTING.md](./docs/TESTING.md), [FINAL_AUDIT.md](./docs/FINAL_AUDIT.md) e [RESULTADOS.md](./docs/RESULTADOS.md).
+- Resend mantém o modo de testes autorizado pelo professor; enviar para destinatários não autorizados pode falhar.
+
 ## O problema
 
 Freelancers e pequenas agências (2 a 10 pessoas) gastam horas todas as semanas a compilar o estado das tarefas, a traduzir linguagem técnica para linguagem de negócio e a responder a clientes que querem saber "em que ponto estamos?". É tempo não faturável, e muitas vezes o cliente continua com dúvidas.
@@ -113,13 +121,15 @@ Segredos das Edge Functions definem-se com `supabase secrets set NOME=valor`.
 
 ### 3. Base de dados e Edge Functions
 
-Os comandos seguintes publicam alterações. Usar um projeto de testes explicitamente escolhido; não executar automaticamente contra produção durante a auditoria.
+**Atenção:** estes comandos podem modificar dados/funções no Supabase. Utilizar apenas um projeto de testes autorizado, verificar a sintaxe da versão local da CLI e rever a lista de migrações antes de qualquer `db push`. Não fazer deploy de todas as funções indiscriminadamente. A função `generate-report` já foi publicada na versão 32; não é necessário voltar a publicar para corrigir `currentIso`.
 
 ```bash
-supabase link --project-ref <o-teu-project-ref>
-supabase db push --remote         # aplica as migrações em supabase/migrations
-supabase functions deploy         # publica as Edge Functions
+supabase --version
+supabase functions deploy --help
+# Escolher explicitamente o projeto e a função, só após rever o comando.
 ```
+
+O procedimento controlado e a sintaxe da CLI 3.1.0 usada na publicação estão em [API.md](./docs/API.md#manual-publication-and-smoke-test-after-pr-60-is-merged).
 
 ### 4. Agendamento automático (cron)
 
@@ -197,7 +207,7 @@ docs/              Documentação do projeto
 
 ## Estado do projeto
 
-*Estado técnico revisto a 15/11/2026; situação documental da validação revista a 17/11/2026.*
+*Inventário técnico original revisto em 15/11/2026 e validação documental em 17/11/2026; publicação pós-merge verificada em 18/11/2026. A tabela seguinte descreve implementação, não validação real ponta-a-ponta.*
 
 | Área | Estado |
 | :--- | :--- |
@@ -205,7 +215,7 @@ docs/              Documentação do projeto
 | Esquema da base de dados, RLS e portal | Implementado; isolamento real e riscos residuais em [FINAL_AUDIT.md](./docs/FINAL_AUDIT.md) |
 | Autenticação (Supabase Auth) | Concluído |
 | Integração com GitHub Projects (PAT cifrado, mapeamento de colunas) | Concluído |
-| Geração de relatórios com IA, com rascunho em bruto como contingência | Concluído |
+| Geração de relatórios com IA, com rascunho em bruto como contingência | Implementada; Edge Function v32 ativa, precisão e geração real por validar |
 | Aprovação, envio por e-mail e portal sem login (links com expiração e renovação) | Concluído |
 | Assistente de onboarding (PulseBot) | Implementado, incluindo voz opcional |
 | Agendamento automático (cron horário) | Implementado; produção não revalidada nesta auditoria |
