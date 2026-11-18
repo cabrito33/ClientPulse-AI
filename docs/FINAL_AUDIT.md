@@ -4,7 +4,15 @@ Review completed locally on 2026-11-18, continuing the 2026-11-17 audit. Branch:
 
 This is an academic readiness review, not a production security certification. The app has substantial implementation and reproducible local evidence. Real provider delivery, SQL isolation and the PRD's user outcomes remain unproven by this audit.
 
-**Pre-merge follow-up (2026-11-18):** the owner reports hosted `generate-report` version 31 still contains undefined `currentIso.week`. The fix is in this PR but has not been deployed by this audit. [API.md](API.md#manual-publication-and-smoke-test-after-pr-60-is-merged) now documents the complete shared-module bundle, manual publication after merge and a draft-only smoke test using the actual `bypass: false` contract. Deployment and remote verification remain pending; no merge, deploy, Resend change or production database permission change was performed. All residual risks below remain open.
+**Historical pre-merge follow-up (2026-11-18; now resolved):** the owner reported hosted `generate-report` version 31 contained undefined `currentIso.week`. At the time the fix was in the PR but had not been deployed. [API.md](API.md#manual-publication-and-smoke-test-after-pr-60-is-merged) now documents the complete shared-module bundle, manual publication after merge and a draft-only smoke test using the actual `bypass: false` contract. Deployment and remote verification **were pending at the time of the original audit**. They were completed subsequently for v32 as recorded above. The original audit did not merge or deploy. All other residual risks below remain open.
+
+## Post-merge verification (2026-11-18)
+
+- PR [#60](https://github.com/cabrito33/ClientPulse-AI/pull/60) was merged into `Main` at commit `a081dd64a0034fc6460bd27c5d640dd7f372ea43`.
+- GitHub Actions push CI for that commit completed successfully; the corresponding production Vercel deployment was `READY`.
+- All seven hosted Supabase Edge Functions are `ACTIVE`, and **15 database migrations** match the versioned inventory. The production `generate-report` is **version 32, JWT verified**, with its entrypoint and seven shared modules inspected against the merged `Main`; the former undefined `currentIso.week` expression is not present.
+- These are deployment and code-consistency checks. There is **no claim** that real GitHub/Gemini/Resend requests, production RLS isolation, delivery concurrency or two actual reporting cycles passed. Real-world metrics in [RESULTADOS.md](RESULTADOS.md) remain unmeasured.
+- The old pre-merge paragraphs and initial test observations below are retained as historical records, not descriptions of the current deployment. Resend configuration was not changed by the corrective publication.
 
 ## Corrections and evidence
 
@@ -84,4 +92,4 @@ These issues are not claims of observed production exploitation. No production p
 
 Existing architecture, visual design and features were retained. Changes correct observed behaviour and wording; no feature removal was intended or observed in tested paths. Resend configuration and provider code were not altered in this branch. No production database operation, deploy, destructive Git operation or force push was performed. Fixtures are explicitly synthetic; no measured outcomes, Stitch originals or sprint ceremonies were fabricated. Screenshots contain dummy identities only. Documentation identifies remaining limitations rather than claiming complete validation.
 
-The branch is prepared for review by Pull Request into `Main`; it is not merged automatically.
+The original audit branch was merged through PR #60 on 2026-11-18. This updated document is a post-merge factual addendum and does not certify the remaining real-world acceptance criteria.
