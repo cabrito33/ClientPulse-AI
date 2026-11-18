@@ -28,6 +28,12 @@ No blanket claim of “no training”, transient retention or TLS 1.3 across eve
 - RLS is enabled and the `success_metrics` view is security-invoker. Separate agency/client/report foreign keys still allow integrity concerns that require real database tests and a reviewed composite-key migration.
 - The Next email webhook verifies its signature; the separate legacy tracking function needs additional protection. See [FINAL_AUDIT.md](FINAL_AUDIT.md).
 
+## Legacy tracking security change — staged, not deployed (2026-11-18)
+
+The legacy Supabase Edge Function `email-tracking` previously used a service-role client to change report-open timestamps based on caller-provided report identifiers, portal-token strings and even timestamps. The code in branch `security/retire-legacy-email-tracking` removes **all database writes** from that legacy endpoint: GET still returns a 1×1 GIF but does **not** log an open; POST returns HTTP 410. It also does not change the existing Resend configuration, the signed Next.js webhook or the separate Next.js tracking pixel.
+
+**Deployment separation:** the hosted `email-tracking` v9 was not modified by this source-only security change. An authorized maintainer must verify that no external integration depends on the old endpoint, run regression and gateway/JWT checks, and separately approve publishing only this function in an isolated environment before production. Existing open-rate estimates may be affected; this change is a security trade-off, not proof that replacement tracking writes persist under real RLS. See [technical audit](FINAL_AUDIT.md) and [API reference](API.md).
+
 ## Portal links and opens
 
 Portal links use randomly generated UUIDv4 tokens (122 random bits in a 128-bit UUID), separate from the client ID. Anyone possessing a valid link can read the published report. New links default to 90 days; the data RPC still accepts legacy NULL expiry. Inactive/revoked/expired links are rejected, and only sent report text is returned. Broader client metadata and metrics remain a minimization concern.
