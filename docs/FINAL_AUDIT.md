@@ -14,6 +14,16 @@ This is an academic readiness review, not a production security certification. T
 - These are deployment and code-consistency checks. There is **no claim** that real GitHub/Gemini/Resend requests, production RLS isolation, delivery concurrency or two actual reporting cycles passed. Real-world metrics in [RESULTADOS.md](RESULTADOS.md) remain unmeasured.
 - The old pre-merge paragraphs and initial test observations below are retained as historical records, not descriptions of the current deployment. Resend configuration was not changed by the corrective publication.
 
+## Final verification after PR #61 merge (2026-11-18)
+
+The documentation/metadata-only PR [#61](https://github.com/cabrito33/ClientPulse-AI/pull/61) was merged into `Main` at **`c5b6b1130514dd1c387e235980fb149431a03bd0`**. Its final GitHub Actions run (`44284400907`) passed before merge; the `Main` push CI run (`44290206990`) **passed**, and the production Vercel deployment was confirmed **READY** for the merged SHA. The live landing page showed the correct `og:url` (`https://weekly-client-reports.vercel.app`), and public/authentication-route HTTP checks found no application error responses. Invalid portal links correctly returned 404, and the tracking pixel returned an image.
+
+**Independent test re-run:** `npm ci` and `npm run check` passed on the pre-#61 `Main`. In a disposable Linux environment the first browser attempt failed due to missing Chromium OS libraries; after installing those libraries, **all eight Playwright E2E tests passed** (four desktop and four mobile), using local provider/Auth/database substitutes. The final PR #61 document-link checker validated **260 local links and anchors**, superseding the historical audit result of 233. The separate `npm audit` still reported **17 advisories (11 high, 6 moderate, zero critical)**.
+
+**Read-only production inspection:** all **seven** Supabase Edge Functions were `ACTIVE`; `generate-report` **v32** retained JWT verification and the correct ISO-week expression; **15** database migrations were present. Every one of the ten public tables inspected had RLS enabled, and five existing-data consistency checks for agency/client/report/token/task relationships returned **zero mismatches**. This does **not** establish that malicious cross-agency inserts/updates are impossible. The hourly `pg_cron` job was active, with 24 SQL executions marked `succeeded` during the inspected 24 hours; it does **not** prove external report generation or email receipt.
+
+**Boundaries and preservation:** no authenticated production end-to-end user scenario, real GitHub/Gemini/Resend delivery, 15 adversarial SQL isolation tests or two measured weekly cycles were completed in this follow-up. The historical results and remaining risks below remain valid. **Resend and its configuration were not altered**. PR [#62](https://github.com/cabrito33/ClientPulse-AI/pull/62), proposing to retire legacy privileged email-tracking writes, remains **unmerged and undeployed** for a future phase. This is evidence of a reviewed **academic prototype**, not a security or production-readiness certification.
+
 ## Corrections and evidence
 
 | Problem and impact | Local correction | Evidence |
@@ -41,8 +51,8 @@ Statuses use the requested categories. “Cumprido” refers to the stated artif
 | Requirement | Status | Evidence and limit |
 | --- | --- | --- |
 | Functional SaaS with end-to-end experience | Parcialmente cumprido | Real Next app completes fixture-based browser flow; two real cycles/provider integration still lack evidence |
-| Frontend, backend and database | Cumprido | Next/React, seven Edge Functions, 15 SQL migrations; production state not revalidated |
-| Workflow automation | Parcialmente cumprido | UTC dispatcher/pg_cron code exists; real scheduling and concurrency safety remain to validate |
+| Frontend, backend and database | Cumprido | Next/React, seven active hosted Edge Functions and 15 applied SQL migrations verified on 2026-11-18; real end-to-end integration not proven |
+| Workflow automation | Parcialmente cumprido | Hourly `pg_cron` job active; 24 successful SQL job executions observed in one day. Provider delivery and concurrency safety remain unverified |
 | AI directly in user functionality | Cumprido | Gemini report generation and PulseBot code; local handler/fallback tests do not establish AI accuracy |
 | Landing, dashboard, registration and authentication | Cumprido | Implemented pages; registration confirmation, login and protected navigation exercised locally |
 | Chatbot or voice bot for onboarding/support | Cumprido | PulseBot chat and optional Web Speech; no browser microphone/provider speech test |
@@ -64,11 +74,11 @@ Statuses use the requested categories. “Cumprido” refers to the stated artif
 | `npm test` | Passed: 89 tests | Existing scripts plus 11 actual-source finalization regressions |
 | `npm run check` | Passed | Lint, types, server-action exports, Node tests, isolated production build |
 | `npm run build` | Passed | Standalone production build |
-| `npm run test:e2e` | 8/8 passed on production build | Desktop/mobile, local substitutes, no outbound email |
-| `npm run test:docs` | Passed: 233 local links/anchors | Relative Markdown file/heading links and UI artifacts |
+| `npm run test:e2e` | 8/8 passed initially and in independent 2026-11-18 re-run | Desktop/mobile, local substitutes, no outbound email; initial independent attempt lacked Chromium OS libraries, fixed before rerun |
+| `npm run test:docs` | Passed: 233 initially; **260** after final PR #61 updates | Local relative links/anchors and UI artifacts; no validation of external sites |
 | SQL isolation script | Not executed | PostgreSQL/Docker unavailable; 15 definitions are not 15 passing results |
-| Live GitHub/Gemini/Resend and cron cycles | Not executed | No production mutations or real messages authorized for this audit |
-| Dependency audit | 17 advisories: 6 moderate, 11 high | Upgrade review remains pending; no automatic major upgrade |
+| Live GitHub/Gemini/Resend and two real report cycles | Not executed | `pg_cron` SQL job execution was verified separately; real providers, delivery and user outcomes were not |
+| Dependency audit | 17 advisories reconfirmed: 6 moderate, 11 high, 0 critical | Upgrade review remains pending; no automatic major upgrade |
 
 Detailed reproduction, failed attempts and evidence limitations: [TESTING.md](TESTING.md). UI origin: [UI/README.md](UI/README.md). Complete file inventory: [CHANGES.md](CHANGES.md).
 
@@ -86,7 +96,7 @@ Detailed reproduction, failed attempts and evidence limitations: [TESTING.md](TE
 | Medium — acceptance gaps | Default login does not auto-start onboarding, schedule UI incomplete, historical report text cannot be opened, subject/intro edits not persisted by approval contract | Focused product follow-ups and acceptance tests; criteria remain visible in both PRDs |
 | Validation — actual outcomes | No measurements establish onboarding <5 min, efficacy >85%, preparation <10 min, accuracy >80%, ≥80% drafts under 3 edits or opens >70% | Run the two controlled cycles in [TESTE_REAL.md](TESTE_REAL.md) with permitted recipients and record sample/date/method in [RESULTADOS.md](RESULTADOS.md) |
 
-These issues are not claims of observed production exploitation. No production permission/function change was applied. Optional later improvements include standalone offline HTML exports, broader browsers/accessibility testing, richer historical navigation and automated E2E in CI. The existing CI runs Node tests and build, not Playwright.
+These issues are not claims of observed production exploitation. No production permission/function change was applied during the final documentation follow-up. Optional later improvements include standalone offline HTML exports, broader browsers/accessibility testing, richer historical navigation and automated E2E in CI. The existing CI runs Node tests and build, not Playwright.
 
 ## Preservation and delivery
 
