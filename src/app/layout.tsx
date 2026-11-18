@@ -15,7 +15,7 @@ const fraunces = Fraunces({
   axes: ["SOFT", "WONK"],
 });
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://clientpulse.example";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://weekly-client-reports.vercel.app";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
