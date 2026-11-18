@@ -14,6 +14,8 @@ These are the board's recorded iterations. The PRD's five weeks are planned work
 
 Project inspection found 49 items and fields including Status, Priority, Size, Estimate and Iteration. Status options are Backlog, To do, In progress, Review and Done; Priority uses High/Medium/Low, while issue labels use P0–P3; Size uses Quick/Medium/Long. Presence of an Estimate field is not evidence that every issue was estimated. Some Done stories have no iteration assignment.
 
+**Snapshot distinction (2026-11-18):** the separately supplied `ClientPulse AI - Backlog.tsv` contains **44 rows**: Sprint 1 has 15/15 Done (47 estimated points), Sprint 2 has 10/10 Done (33), Sprint 3 has 11/12 Done (42), and seven rows have no iteration. The earlier count of 49 refers to the GitHub Projects inspection, not necessarily the same export or capture time. Do not present these counts as directly comparable or infer missing work from the difference. The TSV and the five-page sprint PDF are external delivery materials, not tracked source files here.
+
 ## Retrospective story map from the existing PRD
 
 This table is an audit reconstruction for traceability, **not evidence that a story-mapping workshop occurred**.
