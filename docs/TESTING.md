@@ -1,10 +1,29 @@
 # Test evidence and reproduction
 
-Audit environment: Windows, Node.js 24.20.0, npm 11.19.0, Chromium via Playwright 1.65.1. CI uses Node.js 22. Local results were collected on 2026-11-17/18: 89 Node tests, 8 browser tests and 233 local documentation links/anchors passed, along with lint, types and both production build commands. No production credentials, provider sends or database changes were used.
+Audit environment: Windows, Node.js 24.20.0, npm 11.19.0, Chromium via Playwright 1.65.1. CI uses Node.js 22. The initial local audit (2026-11-17/18) recorded 89 Node tests, 8 browser tests and 233 valid local documentation links/anchors, along with lint, types and production builds. The later, separately verified results for the merged project are recorded below; the historical count of 233 is not the latest documentation count. No production credentials, provider sends or database changes were used.
 
 ## Post-merge deployment verification — 2026-11-18
 
 On top of the historical local test observations below, the GitHub Actions `Main` push workflow for commit `a081dd64a0034fc6460bd27c5d640dd7f372ea43` passed, and the Vercel production build for that commit was `READY`. Hosted `generate-report` v32 was read back from Supabase: `verify_jwt` is true and the entrypoint plus seven shared modules match the merged source. The undefined `currentIso` reference is gone. This is **not** a live provider, SQL isolation, two-week use or actual e-mail-delivery test. No additional passing Node/Playwright test count is asserted here; the 89/8 counts below are from the recorded local audit.
+
+## Final independent revalidation and release status — 2026-11-18
+
+This follow-up checked the **actual** `Main` source (starting at `a081dd64`), reviewed the final PR #61 documentation revision (`bd61377`) and confirmed its **merged** production commit `c5b6b1130514dd1c387e235980fb149431a03bd0`. Findings were obtained in a separate disposable test environment and through read-only GitHub, Vercel and Supabase inspections:
+
+| Verification | Observed result | Boundary |
+| --- | --- | --- |
+| `npm ci` and `npm run check` on the pre-#61 `Main` | Passed, exit code 0; lint, TypeScript, server-action exports, Node tests and Next.js production build | Does not run the Playwright or SQL suite |
+| `npm run test:e2e` on the pre-#61 `Main` | **8/8 passed**: 4 desktop and 4 mobile browser tests using isolated fixture services | First attempt failed because the isolated Linux environment lacked Chromium system libraries; after `npx playwright install-deps chromium`, all eight passed. The first failure was environmental, not a proven app regression |
+| `npm run test:docs` on final PR #61 revision | **260 local links and anchors passed** | Validates repository links/anchors, not external URLs or factual accuracy; supersedes the original 233 |
+| GitHub Actions `Main` workflow for `c5b6b11` | **Passed** (run `44290206990`) | CI includes Node checks and build, **not** Playwright or the live RLS SQL suite |
+| Vercel production after PR #61 merge | **READY** for `c5b6b11`; public home, login and registration responded HTTP 200; protected paths presented login; invalid portal tokens returned HTTP 404; the pixel returned a GIF | HTTP checks without a real signed-in user do not prove end-to-end workflow |
+| Share metadata on the public site | `og:url` now points to `https://weekly-client-reports.vercel.app`, not the placeholder domain | No external social-preview crawler test |
+| Hosted Supabase | Seven Edge Functions `ACTIVE`; `generate-report` **v32** with JWT verification and the corrected ISO-week expression; 15 migrations present | Source/read-back check, not a live report-generation request |
+| Database read-only inspection | RLS enabled on all ten public tables; five tested current-data relationship mismatch counts were **zero** | Does not prove future composite-key integrity or cross-tenant RLS isolation; 15 adversarial SQL assertions remain **unexecuted** |
+| Hourly scheduler | `dispatch-reports-hourly` active; 24 cron-job executions reported `succeeded` in the inspected 24-hour window | A successful SQL cron job does **not** prove delivery or provider success |
+| `npm audit` | **17 advisories: 11 high, 6 moderate, 0 critical** | No dependency upgrade was applied |
+
+The repository's signed-in flow with real Supabase Auth/GitHub, real Gemini results, real Resend delivery, two measured weekly cycles and actual client acceptance metrics **were not validated**. **Resend settings/code were not changed.** PR #62 is a separate draft security proposal and its legacy `email-tracking` changes are **not** part of `Main` or deployed through PR #61.
 
 ## Commands and scope
 
@@ -24,7 +43,7 @@ On Windows PowerShell use `npm.cmd`/`npx.cmd` if script execution policy blocks 
 
 ## What is actually exercised
 
-Historical publication preparation (2026-11-18): Supabase CLI 3.1.0 version/help was verified locally, before the later authorized v32 deployment. The two actual-handler regressions now explicitly test `bypass: false` against `auto_send_enabled: true`, with AI success/fallback, a draft write, correct ISO week, zero email-helper calls and a network-call guard. These remain part of the existing 11-test finalization suite. See [the controlled procedure](API.md#manual-publication-and-smoke-test-after-pr-60-is-merged). Deno/Postgres execution, deployed-bundle inspection and real GitHub/Gemini smoke tests remain pending; no production invocation is authorized by these instructions.
+Historical publication preparation (2026-11-18): Supabase CLI 3.1.0 version/help was verified locally, before the later authorized v32 deployment. The two actual-handler regressions now explicitly test `bypass: false` against `auto_send_enabled: true`, with AI success/fallback, a draft write, correct ISO week, zero email-helper calls and a network-call guard. These remain part of the existing 11-test finalization suite. See [the controlled procedure](API.md#manual-publication-and-smoke-test-after-pr-60-is-merged). Deno/Postgres execution and real GitHub/Gemini smoke tests remain pending. The hosted v32 entrypoint and seven shared modules **were subsequently inspected and matched the merged source**, as detailed above; no production invocation is authorized by these instructions.
 
 | Evidence | Scope | Does not establish |
 | --- | --- | --- |
