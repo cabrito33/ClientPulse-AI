@@ -63,31 +63,47 @@ AI failure produces a raw structured draft and disables automatic sending; it do
 
 Deploy from the full checkout so the CLI includes the imported shared modules. Do not paste `index.ts` alone into a dashboard editor. Including the unchanged `resend.ts` dependency is necessary to resolve imports; it does not require changing Resend configuration or deploying other functions. Before proceeding, compare the existing function's JWT-verification setting with the intended deployment configuration; stop for review if they differ rather than silently changing authentication.
 
-**Publish only this function, manually.** An authorized operator must select the actual project reference and authenticate the CLI outside repository files. Check `supabase --version`, `supabase functions deploy --help` and `supabase functions list --help` first. The following PowerShell commands use the current CLI v3 `--remote` syntax; CLI v2 uses `--project-ref` instead. Use the installed version's help rather than upgrading or changing configuration blindly. The CLI was unavailable in this local update, so these deployment commands were documented, not executed.
+**CLI verification, 2026-11-18.** Supabase CLI **3.1.0** was found in the existing npm cache, although it is not on PATH or installed as a repository dependency. Its actual `--version`, `functions deploy --help`, `functions list --help` and `functions serve --help` were executed. Both hosted commands support `--remote=<ref|branch>`; deploy supports `--use-api` (server-side bundling without Docker). This matches the official reference linked below. No CLI upgrade or dependency installation was performed. Unversioned `npx` looked for a different release and did not resolve the cached installation; use the verified entrypoint below rather than silently downloading another version.
+
+**Publish only this function, manually.** An authorized operator must select the actual project reference and authenticate the CLI outside repository files. This PowerShell example uses the exact cached entrypoint verified on this workstation. On another machine, locate the installed CLI, record its version and check its own help before adapting the invocation. The cache path may disappear; stop if it is absent. Only version/help commands have been executed, not list, deploy or remote invocation.
 
 ```powershell
 # Run only after the human merge and deployment decision, from the merged checkout.
+$cliEntry = Join-Path $env:LOCALAPPDATA 'npm-cache/_npx/aa8e5c70f9d8d161/node_modules/supabase/dist/supabase.js'
+if (-not (Test-Path -LiteralPath $cliEntry)) { throw 'Verified CLI entrypoint missing; locate and verify the installed CLI first' }
+$cliVersion = (node $cliEntry --version | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $cliVersion -ne '3.1.0') { throw 'CLI version changed; review its help before deployment' }
 git status --short
 git rev-parse HEAD
 $projectRef = Read-Host 'Confirmed target Supabase project reference'
-supabase functions list --remote=$projectRef
-supabase functions deploy generate-report --remote=$projectRef --use-api
-supabase functions list --remote=$projectRef
+if ([string]::IsNullOrWhiteSpace($projectRef)) { throw 'Explicit target required' }
+node $cliEntry functions list "--remote=$projectRef"
+if ($LASTEXITCODE -ne 0) { throw 'Pre-deployment inspection failed' }
+node $cliEntry functions deploy generate-report "--remote=$projectRef" --use-api
+if ($LASTEXITCODE -ne 0) { throw 'Deployment failed; inspect before retrying' }
+node $cliEntry functions list "--remote=$projectRef"
 ```
 
 Check the displayed target before confirming the hosted change. Do not add `--no-verify-jwt`, `--prune` or omit the function name. No database migration, `db push`, permission change, `config push`, cron/dispatcher deployment or secrets update is needed for this correction. Record the new function version, deployment timestamp and source SHA; inspect the deployed source/bundle for the helper import and `getIsoWeekYear(periodEnd).week`, with no remaining undefined `currentIso.week`. A new version number alone does not prove that the correct code was bundled. CLI behaviour and bundling flags: [official CLI reference](https://supabase.com/docs/reference/cli/supabase-functions-deploy); version-selection changes: [CLI v3 changelog](https://supabase.com/changelog/supabase-cli-v3).
 
-**Smoke test without sending email.** First use an isolated test project if available. A later production smoke test must be separately authorized: generation creates or updates report/task/metric rows, so it is not read-only. Choose a dedicated existing test client belonging to the signed-in test manager, with a valid GitHub integration. Keep current Resend settings, do not invoke `approve-and-send` or the scheduler, and do not switch the client setting. The explicit JSON boolean `bypass: false` forces this request into manual review.
+**Controlled validation available now, without providers.** `npm run test:finalization` executes the actual handler with in-memory database/provider substitutes. For both AI-success and AI-fallback scenarios, the client has `auto_send_enabled: true` and the request explicitly supplies `bypass: false`. Assertions require HTTP 201, a persisted draft, `auto_sent: false`, the ISO week matching `period.end`, zero email-helper calls and zero network calls. This does not execute Deno or SQL and does not contact production. Resend code/settings remain untouched.
+
+**Real smoke test still pending.** Use an explicitly approved isolated test project containing only synthetic data and no active scheduling that could process the fixture client. If none is available, stop at the local validation above. Generation creates or updates report/task/metric rows, so even `bypass: false` is not read-only. The example below deliberately asks for a separate test target rather than reusing the deployment target. A production invocation requires separate authorization and is outside this prepared test. Choose a dedicated existing test client owned by the signed-in test manager with a valid GitHub integration. Keep current Resend settings, do not invoke `approve-and-send` or the scheduler, and do not switch the client setting. The explicit JSON boolean `bypass: false` suppresses sending by this invocation; it cannot stop unrelated concurrent jobs, hence the isolated environment requirement.
 
 ```powershell
 # TEST_MANAGER_ACCESS_TOKEN is a short-lived Supabase Auth user JWT supplied
 # securely to this process, not a service-role key or a committed value.
+$smokeProjectRef = Read-Host 'Separately approved isolated TEST project reference; never production'
+if ([string]::IsNullOrWhiteSpace($smokeProjectRef)) { throw 'Explicit test target required' }
+if ((Read-Host 'Confirm the project is isolated and test writes are authorized: type TEST ONLY') -cne 'TEST ONLY') {
+  throw 'Test not authorized; no request sent'
+}
 if (-not $env:TEST_MANAGER_ACCESS_TOKEN) { throw 'Missing test-manager access token' }
 $testClientId = Read-Host 'Dedicated test client UUID owned by this manager'
 $headers = @{ Authorization = "Bearer $env:TEST_MANAGER_ACCESS_TOKEN" }
 $payload = @{ client_id = $testClientId; period_days = 7; bypass = $false } | ConvertTo-Json
 $response = Invoke-WebRequest -Method Post -UseBasicParsing `
-  -Uri "https://$projectRef.supabase.co/functions/v1/generate-report" `
+  -Uri "https://$smokeProjectRef.supabase.co/functions/v1/generate-report" `
   -Headers $headers -ContentType 'application/json' -Body $payload
 $result = $response.Content | ConvertFrom-Json
 if ($response.StatusCode -ne 201 -or $result.success -ne $true -or

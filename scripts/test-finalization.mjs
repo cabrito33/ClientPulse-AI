@@ -75,11 +75,11 @@ test('Reading existing sprint metrics preserves historical rows and never delete
 });
 
 for (const aiFails of [false, true]) {
-  test(`Actual generate-report handler completes with ${aiFails ? 'AI fallback' : 'AI output'} and persists sprint metrics`, async () => {
-    let handler; let sends = 0;
+  test(`Actual generate-report handler: bypass false overrides auto-send with ${aiFails ? 'AI fallback' : 'AI output'}`, async () => {
+    let handler; let sends = 0; let networkCalls = 0;
     const task = { id: 'task', title: 'Test task', statusCategory: 'done', labels: [] };
     const db = fakeDatabase(c => {
-      if (c.table === 'clients') return { data: { id: 'client', agency_id: 'agency', name: 'Test client', email: 'client@example.test', auto_send_enabled: false }, error: null };
+      if (c.table === 'clients') return { data: { id: 'client', agency_id: 'agency', name: 'Test client', email: 'client@example.test', auto_send_enabled: true }, error: null };
       if (c.table === 'github_integrations') return { data: { pat_token_encrypted: 'encrypted-fixture' }, error: null };
       if (c.table === 'reports') return { data: c.operation === 'select' ? [] : { id: 'report' }, error: null };
       return { data: [], error: null };
@@ -92,15 +92,22 @@ for (const aiFails of [false, true]) {
       '../_shared/crypto.ts': { decryptPat: async () => 'fixture-only' },
       '../_shared/resend.ts': { sendReportEmail: async () => { sends++; throw Error('Unexpected send'); } },
       '../_shared/idempotency.ts': { getIsoWeekYear, findExistingWeekReport },
-    }, { Deno: { serve: fn => { handler = fn; }, env: { get: key => key === 'GEMINI_API_KEY' ? 'test-only' : undefined } } });
-    const response = await handler(new Request('http://localhost/generate-report', { method: 'POST', body: JSON.stringify({ client_id: 'client' }) }));
+    }, {
+      Deno: { serve: fn => { handler = fn; }, env: { get: key => key === 'GEMINI_API_KEY' ? 'test-only' : undefined } },
+      fetch: async () => { networkCalls++; throw Error('Network is forbidden in this controlled test'); },
+    });
+    const response = await handler(new Request('http://localhost/generate-report', { method: 'POST', body: JSON.stringify({ client_id: 'client', bypass: false }) }));
     const body = await response.json();
     assert.equal(response.status, 201, JSON.stringify(body));
     assert.equal(body.status, 'draft');
+    assert.equal(body.auto_sent, false);
     assert.equal(body.generated_without_ai, aiFails);
     assert.match(body.sprint_metric.sprint, /^S\d+$/);
+    assert.equal(body.sprint_metric.sprint, `S${getIsoWeekYear(new Date(body.period.end)).week}`);
+    assert.ok(db.calls.some(c => c.table === 'reports' && c.operation === 'insert' && c.payload.status === 'draft'));
     assert.ok(db.calls.some(c => c.table === 'sprint_metrics' && c.operation === 'upsert'));
     assert.equal(db.calls.some(c => c.table === 'sprint_metrics' && c.operation === 'delete'), false);
     assert.equal(sends, 0);
+    assert.equal(networkCalls, 0);
   });
 }

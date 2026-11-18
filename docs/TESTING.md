@@ -20,6 +20,8 @@ On Windows PowerShell use `npm.cmd`/`npx.cmd` if script execution policy blocks 
 
 ## What is actually exercised
 
+Publication preparation follow-up (2026-11-18): actual cached Supabase CLI 3.1.0 version/help was verified, without hosted commands. The two actual-handler regressions now explicitly test `bypass: false` against `auto_send_enabled: true`, with AI success/fallback, a draft write, correct ISO week, zero email-helper calls and a network-call guard. These remain part of the existing 11-test finalization suite. See [the controlled procedure](API.md#manual-publication-and-smoke-test-after-pr-60-is-merged). Deno/Postgres execution, deployed-bundle inspection and real GitHub/Gemini smoke tests remain pending; no production invocation is authorized by these instructions.
+
 | Evidence | Scope | Does not establish |
 | --- | --- | --- |
 | Existing Node scripts | Security allowlist, bypass/mapping/tracking/dispatch/email logic, PAT access, rate limits, voice text, summaries, editing and email escaping/failure | Several scripts simulate or duplicate orchestration; they are not live integration tests |
