@@ -13,6 +13,8 @@
 ## 0. Estado da validação — verificação documental em 17/11/2026
 
 > **Estado: resultados de utilização real não comprovados nesta documentação.** Uma funcionalidade implementada, um teste automatizado aprovado ou uma issue encerrada **não equivale** a uma medição observada em produção. Não preencher valores nem declarar metas atingidas sem evidência.
+>
+> **Atualização de infraestrutura (18/11/2026):** PR #60 integrado, Vercel publicada e `generate-report` versão 32 ativa com correção de `currentIso`. A publicação não fornece valores medidos para os dois ciclos reais nem comprova resultados de IA ou entregas de e-mail.
 
 | Fonte verificada | O que comprova | O que não comprova |
 | :--- | :--- | :--- |
