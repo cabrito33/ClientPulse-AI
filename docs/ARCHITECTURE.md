@@ -172,7 +172,7 @@ sequenceDiagram
 
 ### 5.2 Row Level Security (RLS) Boundary
 - Every table (`agencies`, `github_integrations`, `clients`, `reports`, `report_tasks`) has PostgreSQL Row Level Security enabled (`ENABLE ROW LEVEL SECURITY`).
-- Policies guarantee strict multi-tenant isolation:
+- Policies restrict reads and writes to the agency identified by the authenticated JWT. They are important safeguards, **not proof of complete multi-tenant isolation without adversarial tests**:
   ```sql
   -- Example policy: Users can only see clients belonging to their agency
   CREATE POLICY "Agencies can only access their own clients"
@@ -182,7 +182,7 @@ sequenceDiagram
     agency_id IN (SELECT id FROM agencies WHERE user_id = auth.uid())
   );
   ```
-- No user can read, insert, update, or delete data belonging to another agency, even if they manipulate client-side code.
+- The intended rule is that agencies cannot access one another's data. However, independent foreign keys between `clients`, `reports`, `report_tasks`, `portal_tokens` and agencies do not enforce consistent tenant ownership by themselves. The cross-agency SQL isolation suite has not been executed; see [FINAL_AUDIT.md](FINAL_AUDIT.md) and [DATABASE.md](DATABASE.md).
 
 ### 5.3 Zero-Login Client Portal Security & Magic Links (BE-19)
 - The end-client portal accesses data through the fail-closed `get_portal_data_by_token(UUID)` `SECURITY DEFINER` RPC.
