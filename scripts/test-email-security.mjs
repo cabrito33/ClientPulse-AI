@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildReportEmailHtml, sendReportEmail } from "../supabase/functions/_shared/resend.ts";
+import { loadTypeScript } from "../tests/helpers/load-typescript.mjs";
 
 const options = {
   toEmail: "customer@example.com",
@@ -58,4 +59,37 @@ test("Sandbox 403 restrictions fail and never return mock delivery", async () =>
     globalThis.fetch = originalFetch;
     globalThis.Deno = originalDeno;
   }
+});
+
+test("Retired legacy email-tracking GET returns a GIF without privileged database access", async () => {
+  let handler;
+  loadTypeScript("supabase/functions/email-tracking/index.ts", {
+    "../_shared/cors.ts": { corsHeaders: {}, handleCors: () => null },
+  }, { Deno: { serve: (callback) => { handler = callback; } } });
+  assert.equal(typeof handler, "function");
+  const res = await handler(new Request("https://example.test/functions/v1/email-tracking?reportId=another-agency-report&token=revoked-token"));
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("content-type"), "image/gif");
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  assert.equal(bytes.length, 43);
+  assert.equal(String.fromCharCode(...bytes.slice(0, 3)), "GIF");
+});
+
+test("Retired legacy email-tracking POST cannot update arbitrary report IDs or timestamps", async () => {
+  let handler;
+  loadTypeScript("supabase/functions/email-tracking/index.ts", {
+    "../_shared/cors.ts": { corsHeaders: {}, handleCors: () => null },
+  }, { Deno: { serve: (callback) => { handler = callback; } } });
+  const req = new Request("https://example.test/functions/v1/email-tracking", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      reportId: "another-agency-report",
+      type: "email.opened",
+      timestamp: "2050-01-01T00:00:00Z",
+    }),
+  });
+  const res = await handler(req);
+  assert.equal(res.status, 410);
+  assert.match((await res.json()).error, /disabled/);
 });
