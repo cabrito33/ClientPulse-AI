@@ -1,331 +1,159 @@
-# Edge Functions API Reference — ClientPulse AI
+# API reference — ClientPulse AI
 
-## 1. Overview & Authentication Rules
+Source-reviewed on 2026-11-18. These are implementation contracts, not results of live provider tests. Edge Functions live under [supabase/functions](../supabase/functions); browser calls use [edge.ts](../src/lib/edge.ts), with server actions under [actions](../src/app/actions).
 
-All backend logic in ClientPulse AI runs on **Supabase Edge Functions** (TypeScript on the Deno runtime). Every function has a single, well-defined responsibility.
+## Authentication and common behaviour
 
-### 1.1 Base URL
-- **Local Development:** `http://localhost:54321/functions/v1`
-- **Hosted Supabase:** `https://<project-ref>.supabase.co/functions/v1`
+The deployed base is `https://<PROJECT_REF>.supabase.co/functions/v1`. Management endpoints validate a Supabase bearer JWT and agency ownership. Internal generation/dispatch can use `X-Scheduled-Secret`; never place this secret in browser code. CORS does not authenticate callers. JSON error bodies normally contain `error`; wrong methods return 405, missing inputs 400, invalid identity 401, missing/inaccessible resources 404. Unhandled errors return 500. Inspect each function for specific exceptions below.
 
-### 1.2 Authentication Schemes
-1. **Authenticated User (`Bearer <JWT>`):**
-   - The caller is an agency manager logged in via Supabase Auth.
-   - The function extracts the user with `supabase.auth.getUser(token)`.
-   - Used by: `github-sync`, `generate-report`, `approve-and-send`, `onboarding-chat`.
-2. **Public Token-Gated (`/portal/[token]`):**
-   - The caller is an end client clicking a link from their email (`/portal/<UUID>`).
-   - Does not require a login. The function verifies that the UUID exists in `clients.portal_token` using the internal `service_role` client.
-   - Used by: `client-portal-data`.
-3. **Internal Scheduled Dispatcher (`X-Scheduled-Secret` or `service_role`):**
-   - Invoked exclusively by `pg_cron` (via `pg_net`) or local cron scripts.
-   - Validates an internal shared secret to prevent unauthorized public invocation.
-   - Used by: `dispatch-scheduled-reports`.
+Examples use placeholders and describe schemas; none is evidence of a real request or email delivery.
 
----
+## POST github-sync
 
-## 2. Shared Utilities (`supabase/functions/_shared/`)
+[Implementation](../supabase/functions/github-sync/index.ts). Body uses `action` and action-specific arguments. A supplied PAT or the agency's stored encrypted PAT is used server-side.
 
-To keep code clean and prevent duplicate logic, all Edge Functions import from `_shared/`:
-- `_shared/cors.ts`: Standard CORS headers (`Access-Control-Allow-Origin`, `Access-Control-Allow-Headers`, OPTIONS handling).
-- `_shared/supabaseClient.ts`: Instantiates either a user-scoped Supabase client (respects RLS) or an admin client (`service_role`, bypasses RLS for portal/cron).
-- `_shared/github.ts`: Reusable GraphQL client for GitHub Projects v2 queries.
-- `_shared/gemini.ts`: Google Gemini API client with JSON schema validation.
-- `_shared/resend.ts`: Transactional email sender with responsive HTML email templates.
+| Action | Inputs | Successful result |
+| --- | --- | --- |
+| `test-connection` | `pat_token` or stored credential | `valid`, `username`, `name`, `avatarUrl` |
+| `save-pat` | `pat_token` | `success`, `username`; persists encrypted credential |
+| `list-projects` | optional `owner`, `owner_type` | `owner`, `projects` |
+| `fetch-columns` | `project_id` | `fieldId`, `fieldName`, `columns` |
+| `fetch-board-data` | `project_id`, optional `column_mapping`, `days_ago` | categorized task data from GitHub helper |
+| `sync-metrics` | `client_id` | `success`, client/sprint information and `tasks_count` |
 
----
+Classic `read:project`/`repo` scopes and fine-grained token permissions are distinct. A valid identity alone does not prove access to every private or organization project. GraphQL rate limits are handled separately from invalid credentials. The runtime allowlist prevents repository-file queries.
 
-## 3. Endpoints Specification
+## POST generate-report
 
-### 3.1 `POST /github-sync`
-Connects to GitHub Projects v2 via GraphQL, verifies credentials, and lists available projects and status columns.
+[Implementation](../supabase/functions/generate-report/index.ts). Accepts user JWT or scheduled secret. Body: required `client_id`; optional `period_days`, `custom_notes`, `bypass`.
 
-- **Caller:** Authenticated Agency User (`Authorization: Bearer <JWT>`).
-- **Headers:**
-  - `Authorization: Bearer <USER_JWT>`
-  - `Content-Type: application/json`
+The handler reads `body.bypass`: when supplied, it overrides `client.auto_send_enabled`; when omitted, the client setting applies. Send a JSON boolean (`false` to force manual review), not a string: the code uses `Boolean(body.bypass)`, so the string `"false"` is truthy. `bypass_approval` is not a supported alias and is ignored. Even with `bypass: true`, AI fallback or empty content prevents automatic sending.
 
-#### Action: `test-connection`
-Validates a personal access token before saving.
-```json
-// Request Body
-{
-  "action": "test-connection",
-  "pat_token": "github_pat_11A..."
-}
+A successful request returns **201**, including deterministic fallback:
 
-// Response (200 OK)
-{
-  "valid": true,
-  "github_username": "maria-agency",
-  "avatar_url": "https://avatars.githubusercontent.com/u/123456"
-}
-```
-
-#### Action: `list-projects`
-Lists all Projects v2 owned by a user or organization.
-```json
-// Request Body
-{
-  "action": "list-projects",
-  "owner": "iscte-agile-team",
-  "owner_type": "organization" // "organization" | "user"
-}
-
-// Response (200 OK)
-{
-  "projects": [
-    {
-      "id": "PVT_kwDOA123456",
-      "number": 1,
-      "title": "ClientPulse AI Development",
-      "closed": false,
-      "url": "https://github.com/orgs/iscte-agile-team/projects/1"
-    }
-  ]
-}
-```
-
-#### Action: `fetch-columns`
-Retrieves the status field options (columns) for column mapping.
-```json
-// Request Body
-{
-  "action": "fetch-columns",
-  "project_id": "PVT_kwDOA123456"
-}
-
-// Response (200 OK)
-{
-  "field_id": "PVTF_lADOA123456",
-  "field_name": "Status",
-  "columns": [
-    { "id": "f75ad910", "name": "Todo" },
-    { "id": "47fc9ee4", "name": "In Progress" },
-    { "id": "98236657", "name": "Blocked" },
-    { "id": "2a9446d3", "name": "Done" }
-  ]
-}
-```
-
-#### Error Cases
-- `400 Bad Request`: Missing `action` or `pat_token`.
-- `401 Unauthorized`: Invalid GitHub PAT or expired Supabase JWT.
-- `404 Not Found`: GitHub project or organization not found.
-
----
-
-### 3.2 `POST /generate-report`
-Fetches card metadata updated or completed in the last 7 days from GitHub Projects v2, prompts Gemini with client tone/language, validates the 3-block structure, and stores a `draft` report.
-
-- **Caller:** Authenticated Agency User or Internal Batch Dispatcher.
-- **Headers:**
-  - `Authorization: Bearer <USER_JWT>`
-  - `Content-Type: application/json`
-
-#### Request Body
-```json
-{
-  "client_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "custom_notes": "Emphasize that the authentication milestone is fully complete."
-}
-```
-
-#### Response (201 Created)
-```json
-{
-  "report_id": "8bb1b88e-6c61-4899-b1d3-35f9bc64e29f",
-  "client_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "status": "draft",
-  "period_start": "2026-10-13",
-  "period_end": "2026-10-20",
-  "blocks": {
-    "done": "• Concluída a integração com a API GraphQL do GitHub Projects v2.\n• Criada a base de dados no Supabase com isolamento de dados por agência.\n• Desenvolvidas as rotas seguras para o portal de clientes.",
-    "blockers": "• Aguarda aprovação das credenciais de envio de e-mail de teste no serviço transacional.",
-    "next_steps": "• Finalizar a interface do utilizador no Google Stitch.\n• Realizar o teste com utilizadores reais na próxima sexta-feira."
-  },
-  "tasks_count": 8
-}
-```
-
-#### Error Cases
-- `400 Bad Request`: `client_id` is missing or invalid.
-- `404 Not Found`: Client not found or has no linked GitHub project.
-- `502 Bad Gateway`: GitHub API or Gemini API error.
-
----
-
-### 3.3 `POST /approve-and-send`
-Allows the agency manager to modify the draft text, marks the report as `approved`/`sent`, and sends an email to the client via Resend.
-
-- **Caller:** Authenticated Agency User (`Authorization: Bearer <JWT>`).
-- **Headers:**
-  - `Authorization: Bearer <USER_JWT>`
-  - `Content-Type: application/json`
-
-#### Request Body
-```json
-{
-  "report_id": "8bb1b88e-6c61-4899-b1d3-35f9bc64e29f",
-  "updated_blocks": {
-    "done": "• Concluída a integração com a API GraphQL do GitHub...\n• Adicionado suporte para testes automatizados.",
-    "blockers": "• Nenhum bloqueio crítico esta semana.",
-    "next_steps": "• Início dos testes com utilizadores finais."
-  }
-}
-```
-
-#### Response (200 OK)
 ```json
 {
   "success": true,
-  "report_id": "8bb1b88e-6c61-4899-b1d3-35f9bc64e29f",
-  "status": "sent",
-  "sent_at": "2026-10-20T15:00:00Z",
-  "email_delivery_id": "resend_msg_01JB...",
-  "portal_url": "https://clientpulse.app/portal/d4b29596-f947-4972-965a-0824b0b8cbf0"
+  "report_id": "<REPORT_UUID>",
+  "client_id": "<CLIENT_UUID>",
+  "status": "draft",
+  "auto_sent": false,
+  "generated_without_ai": false,
+  "period": { "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" },
+  "blocks": { "done": "...", "blockers": "...", "next_steps": "..." },
+  "sprint_metric": { "sprint": "Snn", "label": "Semana nn", "completed": 0, "planned": 0 },
+  "tasks_count": { "total": 0, "done": 0, "in_progress": 0, "blocked": 0, "ignored": 0 },
+  "unmapped_columns": [],
+  "ignored_tasks_count": 0
 }
 ```
 
-#### Error Cases
-- `400 Bad Request`: Missing `report_id` or report is already sent.
-- `403 Forbidden`: User does not own the agency that generated this report.
-- `500 Internal Server Error`: Email delivery failure.
+AI failure produces a raw structured draft and disables automatic sending; it does not inherently return 502. Other dependencies can still fail. GitHub rate limits return 429 with `code: GITHUB_RATE_LIMITED`. A matching draft can be updated. Weekly checks are not atomic delivery guarantees. Metrics currently use Snn without a year.
 
----
+### Manual publication and smoke test after PR #60 is merged
 
-### 3.4 `GET /client-portal-data`
-Public zero-login endpoint for the client portal. Validates the client's UUID token and returns the latest report, historical reports, and sprint delivery velocity.
+**Deployment gap, reported by the project owner on 2026-11-18:** the hosted `generate-report` is still version 31 and references undefined `currentIso.week`. The branch fixes this with `getIsoWeekYear(periodEnd).week`, imported from `_shared/idempotency.ts`. Local tests and GitHub CI do not publish this correction to Supabase. Version 31 was not independently inspected during this documentation update; remote deployment and smoke-test results remain pending.
 
-- **Caller:** Public Client Web Browser (No login required).
-- **Query Parameter:** `token` (Required UUIDv4).
+**Prepare the complete bundle.** After a human merges PR #60, use a clean checkout of the resulting `Main` commit and record its SHA. From the repository root, preserve these relative paths from that same commit:
 
-#### Request Example
-```http
-GET /functions/v1/client-portal-data?token=d4b29596-f947-4972-965a-0824b0b8cbf0
+- [generate-report/index.ts](../supabase/functions/generate-report/index.ts) — entrypoint and corrected week calculation.
+- [_shared/idempotency.ts](../supabase/functions/_shared/idempotency.ts) — exports `getIsoWeekYear` and `findExistingWeekReport`.
+- [_shared/cors.ts](../supabase/functions/_shared/cors.ts), [_shared/supabaseClient.ts](../supabase/functions/_shared/supabaseClient.ts), [_shared/github.ts](../supabase/functions/_shared/github.ts), [_shared/gemini.ts](../supabase/functions/_shared/gemini.ts), [_shared/crypto.ts](../supabase/functions/_shared/crypto.ts) and [_shared/resend.ts](../supabase/functions/_shared/resend.ts) — existing imports required by the entrypoint. `gemini.ts` also imports a type from `github.ts`; `supabaseClient.ts` imports `npm:@supabase/supabase-js@2`.
+- [supabase/config.toml](../supabase/config.toml) — retain the checked-in configuration. Do not change secrets or authentication settings for this fix.
+
+Deploy from the full checkout so the CLI includes the imported shared modules. Do not paste `index.ts` alone into a dashboard editor. Including the unchanged `resend.ts` dependency is necessary to resolve imports; it does not require changing Resend configuration or deploying other functions. Before proceeding, compare the existing function's JWT-verification setting with the intended deployment configuration; stop for review if they differ rather than silently changing authentication.
+
+**CLI verification, 2026-11-18.** Supabase CLI **3.1.0** was found in the existing npm cache, although it is not on PATH or installed as a repository dependency. Its actual `--version`, `functions deploy --help`, `functions list --help` and `functions serve --help` were executed. Both hosted commands support `--remote=<ref|branch>`; deploy supports `--use-api` (server-side bundling without Docker). This matches the official reference linked below. No CLI upgrade or dependency installation was performed. Unversioned `npx` looked for a different release and did not resolve the cached installation; use the verified entrypoint below rather than silently downloading another version.
+
+**Publish only this function, manually.** An authorized operator must select the actual project reference and authenticate the CLI outside repository files. This PowerShell example uses the exact cached entrypoint verified on this workstation. On another machine, locate the installed CLI, record its version and check its own help before adapting the invocation. The cache path may disappear; stop if it is absent. Only version/help commands have been executed, not list, deploy or remote invocation.
+
+```powershell
+# Run only after the human merge and deployment decision, from the merged checkout.
+$cliEntry = Join-Path $env:LOCALAPPDATA 'npm-cache/_npx/aa8e5c70f9d8d161/node_modules/supabase/dist/supabase.js'
+if (-not (Test-Path -LiteralPath $cliEntry)) { throw 'Verified CLI entrypoint missing; locate and verify the installed CLI first' }
+$cliVersion = (node $cliEntry --version | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $cliVersion -ne '3.1.0') { throw 'CLI version changed; review its help before deployment' }
+git status --short
+git rev-parse HEAD
+$projectRef = Read-Host 'Confirmed target Supabase project reference'
+if ([string]::IsNullOrWhiteSpace($projectRef)) { throw 'Explicit target required' }
+node $cliEntry functions list "--remote=$projectRef"
+if ($LASTEXITCODE -ne 0) { throw 'Pre-deployment inspection failed' }
+node $cliEntry functions deploy generate-report "--remote=$projectRef" --use-api
+if ($LASTEXITCODE -ne 0) { throw 'Deployment failed; inspect before retrying' }
+node $cliEntry functions list "--remote=$projectRef"
 ```
 
-#### Response (200 OK)
-```json
-{
-  "client": {
-    "name": "Maria Silva",
-    "company_name": "Agência Criativa Lda"
-  },
-  "latest_report": {
-    "id": "8bb1b88e-6c61-4899-b1d3-35f9bc64e29f",
-    "period_start": "2026-10-13",
-    "period_end": "2026-10-20",
-    "summary_done": "• Concluída a integração com a API GraphQL...",
-    "summary_blockers": "• Aguarda aprovação das credenciais...",
-    "summary_next_steps": "• Finalizar a interface do utilizador...",
-    "sent_at": "2026-10-20T15:00:00Z"
-  },
-  "history": [
-    {
-      "id": "7aa0a77d-5b50-3788-a0c2-24e8ab53d18e",
-      "period_start": "2026-10-06",
-      "period_end": "2026-10-13",
-      "summary_done": "• Configuração inicial da arquitetura...",
-      "sent_at": "2026-10-13T15:00:00Z"
-    }
-  ],
-  "metrics": {
-    "sprint_velocity": [
-      { "period_end": "2026-10-13", "completed_tasks": 6 },
-      { "period_end": "2026-10-20", "completed_tasks": 8 }
-    ]
-  }
+Check the displayed target before confirming the hosted change. Do not add `--no-verify-jwt`, `--prune` or omit the function name. No database migration, `db push`, permission change, `config push`, cron/dispatcher deployment or secrets update is needed for this correction. Record the new function version, deployment timestamp and source SHA; inspect the deployed source/bundle for the helper import and `getIsoWeekYear(periodEnd).week`, with no remaining undefined `currentIso.week`. A new version number alone does not prove that the correct code was bundled. CLI behaviour and bundling flags: [official CLI reference](https://supabase.com/docs/reference/cli/supabase-functions-deploy); version-selection changes: [CLI v3 changelog](https://supabase.com/changelog/supabase-cli-v3).
+
+**Controlled validation available now, without providers.** `npm run test:finalization` executes the actual handler with in-memory database/provider substitutes. For both AI-success and AI-fallback scenarios, the client has `auto_send_enabled: true` and the request explicitly supplies `bypass: false`. Assertions require HTTP 201, a persisted draft, `auto_sent: false`, the ISO week matching `period.end`, zero email-helper calls and zero network calls. This does not execute Deno or SQL and does not contact production. Resend code/settings remain untouched.
+
+**Real smoke test still pending.** Use an explicitly approved isolated test project containing only synthetic data and no active scheduling that could process the fixture client. If none is available, stop at the local validation above. Generation creates or updates report/task/metric rows, so even `bypass: false` is not read-only. The example below deliberately asks for a separate test target rather than reusing the deployment target. A production invocation requires separate authorization and is outside this prepared test. Choose a dedicated existing test client owned by the signed-in test manager with a valid GitHub integration. Keep current Resend settings, do not invoke `approve-and-send` or the scheduler, and do not switch the client setting. The explicit JSON boolean `bypass: false` suppresses sending by this invocation; it cannot stop unrelated concurrent jobs, hence the isolated environment requirement.
+
+```powershell
+# TEST_MANAGER_ACCESS_TOKEN is a short-lived Supabase Auth user JWT supplied
+# securely to this process, not a service-role key or a committed value.
+$smokeProjectRef = Read-Host 'Separately approved isolated TEST project reference; never production'
+if ([string]::IsNullOrWhiteSpace($smokeProjectRef)) { throw 'Explicit test target required' }
+if ((Read-Host 'Confirm the project is isolated and test writes are authorized: type TEST ONLY') -cne 'TEST ONLY') {
+  throw 'Test not authorized; no request sent'
+}
+if (-not $env:TEST_MANAGER_ACCESS_TOKEN) { throw 'Missing test-manager access token' }
+$testClientId = Read-Host 'Dedicated test client UUID owned by this manager'
+$headers = @{ Authorization = "Bearer $env:TEST_MANAGER_ACCESS_TOKEN" }
+$payload = @{ client_id = $testClientId; period_days = 7; bypass = $false } | ConvertTo-Json
+$response = Invoke-WebRequest -Method Post -UseBasicParsing `
+  -Uri "https://$smokeProjectRef.supabase.co/functions/v1/generate-report" `
+  -Headers $headers -ContentType 'application/json' -Body $payload
+$result = $response.Content | ConvertFrom-Json
+if ($response.StatusCode -ne 201 -or $result.success -ne $true -or
+    $result.status -ne 'draft' -or $result.auto_sent -ne $false -or
+    -not $result.report_id -or $result.sprint_metric.sprint -notmatch '^S\d+$') {
+  throw 'Smoke test failed; inspect function logs and existing writes before any retry'
 }
 ```
 
-#### Error Cases
-- `400 Bad Request`: Missing or malformed UUID `token`.
-- `404 Not Found`: Token not recognized or revoked.
+Inspect that report in the manager dashboard: three blocks, correct period and an ISO week matching `period.end` in UTC; verify the returned sprint counts against the selected test board. Check Supabase function logs for this invocation and confirm the previous undefined-variable error is absent, with no send attempted by this request. Record a sanitized result (date, source SHA, deployed version, HTTP status and observations), not JWTs, PATs, live portal URLs or client data. `generated_without_ai: true` validates the fallback path only, not live Gemini success. On failure, inspect existing report/metric writes before retrying; do not delete production rows or automatically roll back to the known-broken version 31.
 
----
+This publication addresses the undefined week variable only. Sending concurrency, legacy tracking, dependency advisories and the unexecuted RLS suite remain open in [FINAL_AUDIT.md](FINAL_AUDIT.md). Neither this documentation update nor a successful smoke test resolves them.
 
-### 3.5 `POST /dispatch-scheduled-reports`
-Triggered periodically by `pg_cron` via `pg_net`. Scans for clients due in the current UTC hour, generates drafts, and auto-sends if `auto_send_enabled` is true.
+## POST approve-and-send
 
-- **Caller:** `pg_cron` / `pg_net` with `X-Scheduled-Secret: <SECRET>`.
+[Implementation](../supabase/functions/approve-and-send/index.ts). Requires user JWT. Body: `report_id`, optional `updated_blocks` containing `done`, `blockers`, `next_steps`. Subject and introduction edits in the current UI are not represented by this three-block contract.
 
-#### Request Body
-```json
-{
-  "target_day": 5, // 0 = Sun, 5 = Fri
-  "target_hour_utc": 9
-}
-```
+Success **200**: `success`, `report_id`, `status: sent`, `sent_at`, `email_delivery_id`, `is_mock_delivery`, `mock`, `portal_url`. The actual Resend helper does not turn missing credentials or rejected deliveries into mock success. Test fixtures explicitly substitute this endpoint and may return a mock flag.
 
-#### Response (200 OK)
-```json
-{
-  "processed_clients": 3,
-  "drafts_created": 2,
-  "auto_sent": 1,
-  "errors": []
-}
-```
+Send failure returns **502** and records failure details. Inaccessible report returns **404**. There is no guaranteed 409 for an already-sent report: repeated/concurrent calls can send again. Token upsert and delivery/persistence are not a single transaction. See [audit risks](FINAL_AUDIT.md).
 
----
+## POST dispatch-scheduled-reports
 
-### 3.6 `POST /onboarding-chat`
-Conversational onboarding assistant (PulseBot). Powered by Google Gemini with strict guardrails, it guides the user step-by-step through generating a GitHub PAT (classic with `read:project`), tests and encrypts the PAT in real time, and helps select a board, configure column mapping, and create the first client profile.
+[Implementation](../supabase/functions/dispatch-scheduled-reports/index.ts). Requires `X-Scheduled-Secret` (403 if absent/invalid). Optional JSON `target_day` and `target_hour_utc` override the evaluated UTC window for controlled testing. The dispatcher considers **all clients in that window**, not a single selected client.
 
-- **Caller:** Authenticated Agency User (`Authorization: Bearer <JWT>`).
-- **Knowledge Source:** Embedded factual product knowledge (`_shared/faq.ts`) based on PRD.
-- **Resilience:** Automatic retries on transient Gemini errors (429/500/503), secondary model fallback (`gemini-3.7-flash`), and deterministic FAQ fallback if AI is unavailable.
+Result **200** contains `evaluated_time`, `total_clients_found`, `drafts_created`, `auto_sent`, `skipped_duplicate`, `details`, and `errors` (an array of client/error objects). `drafts_created` counts newly persisted reports including automatic sends. No due clients adds a `message`. A 200 may contain per-client errors, so inspect the array.
 
-#### Request Body
-```json
-{
-  "message": "Aqui está o meu token do GitHub: ghp_11A...",
-  "conversation_history": [
-    { "role": "assistant", "content": "Olá! Para começarmos, preciso que introduzas o teu Personal Access Token do GitHub." }
-  ],
-  "current_step": 1,
-  "selected_project": "Sprint Board"
-}
-```
+A prior report in the ISO week can be skipped. Concurrent invocations can both pass the lookup, and sending before persistence creates a retry risk. There is no durable retry queue or exactly-once guarantee.
 
-#### Response (200 OK)
-```json
-{
-  "reply": "Excelente! Validei o teu token com sucesso para o utilizador @maria-agency. Podes agora selecionar o teu board na lista abaixo.",
-  "action_detected": {
-    "action": "pat_validated",
-    "data": {
-      "username": "maria-agency",
-      "connected": true
-    }
-  },
-  "github_status": {
-    "is_connected": true,
-    "username": "maria-agency"
-  }
-}
-```
+## GET client-portal-data?token=<TOKEN>
 
-- **Possible `action_detected.action` values:**
-  - `pat_validated`: PAT token validated against GitHub GraphQL API and encrypted in `github_integrations`.
-  - `pat_failed`: Token invalid or lacking required `read:project` scopes.
-  - `awaiting_client_details`: GitHub is connected, guiding board/column/client configuration.
-  - `awaiting_pat`: Waiting for user to provide a valid classic PAT token.
+[Implementation](../supabase/functions/client-portal-data/index.ts). Public handler validates UUID format and calls `get_portal_data_by_token`. Returns 400 for missing/malformed token, 404 for invalid/expired/revoked token, 500 for RPC failure.
 
----
+Success **200**, `Cache-Control: no-store`: `client` (`name`, `company_name`, `language`), `latest_report`, `history` (excluding the latest), and `metrics` (`total_reports`, `sprint_velocity`). Only sent report text is published. Velocity entries use `sprint`, `label`, `completed`, `planned`.
 
-## 4. Quick Testing via `curl`
+The web route `/portal/[token]` uses Next SSR with the RPC directly, rather than fetching this Edge endpoint. Its history list includes the current sent report. Legacy NULL expiry is still accepted by the data RPC; open recording is stricter. This is a bearer link: possession grants access, so never publish real tokens.
 
-Test your functions locally using these commands:
+## POST onboarding-chat
 
-```bash
-# 1. Test GitHub PAT validation
-curl -X POST http://localhost:54321/functions/v1/github-sync \
-  -H "Authorization: Bearer <YOUR_SUPABASE_ANON_OR_USER_JWT>" \
-  -H "Content-Type: application/json" \
-  -d '{"action":"test-connection","pat_token":"github_pat_xxx"}'
+[Implementation](../supabase/functions/onboarding-chat/index.ts). Requires user JWT. Receives `message` and optional `history`. Detects/validates PAT input, masks token content before AI prompting and can use deterministic FAQ fallback.
 
-# 2. Test Client Portal Public Access
-curl -X GET "http://localhost:54321/functions/v1/client-portal-data?token=d4b29596-f947-4972-965a-0824b0b8cbf0"
-```
+Result **200**: `reply`, `action_detected` (`action`, optional `data`), `github_status` (`is_connected`, `username`). Actions include `pat_validated`, `pat_failed`, `awaiting_client_details`, `awaiting_pat`. No provider availability is established by the local fixture responses.
+
+## Tracking endpoints and limitations
+
+| Endpoint | Behaviour | Boundary |
+| --- | --- | --- |
+| Next `GET /api/track/open` | Tracking GIF; server timestamp | User-scoped DB client may fail anonymous RLS; pixel fetch is not proof of human reading |
+| Next `POST /api/webhooks/resend` | Verifies Svix HMAC signature and event | Signature tests do not prove database persistence under RLS |
+| Edge `email-tracking` GET/POST | Legacy service-role tracking by report/token/event | Separate from signed Next webhook; lacks equivalent handler authentication/signature checks, and accepts supplied timestamp on POST. Do not treat as a secure alternative |
+| SQL `record_portal_report_open` | Token-validated sent-report update | Requires active, unrevoked, future-expiry token; portal metadata/previews can trigger it |
+
+No Resend settings, webhook subscriptions or production permissions were changed. Local regressions, browser fixtures and unexecuted SQL checks are distinguished in [TESTING.md](TESTING.md).

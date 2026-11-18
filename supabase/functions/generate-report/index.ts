@@ -21,7 +21,7 @@ import { fetchBoardTasks, GitHubRateLimitError } from '../_shared/github.ts';
 import { generateExecutiveReport } from '../_shared/gemini.ts';
 import { decryptPat } from '../_shared/crypto.ts';
 import { sendReportEmail } from '../_shared/resend.ts';
-import { findExistingWeekReport } from '../_shared/idempotency.ts';
+import { findExistingWeekReport, getIsoWeekYear } from '../_shared/idempotency.ts';
 
 Deno.serve(async (req: Request) => {
   // 1. Handle CORS preflight
@@ -348,19 +348,13 @@ Deno.serve(async (req: Request) => {
     }
 
     // 11. Calculate and Save/Upsert Sprint Metrics for this period
-    const weekNum = currentIso.week;
+    const weekNum = getIsoWeekYear(periodEnd).week;
     const sprintCode = `S${weekNum}`;
     const sprintLabel = `Semana ${weekNum}`;
     const completedCount = tasks.done.length;
     const plannedCount = tasks.all.length;
 
-    // Remove any erroneous future sprint metrics for this client
-    await supabase
-      .from('sprint_metrics')
-      .delete()
-      .eq('client_id', client.id)
-      .gt('sprint', sprintCode);
-
+    // Preserve historical metrics; lexicographic S-number comparison is not chronological.
     await supabase.from('sprint_metrics').upsert({
       client_id: client.id,
       agency_id: client.agency_id,

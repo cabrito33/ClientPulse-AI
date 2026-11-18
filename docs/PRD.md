@@ -1,9 +1,18 @@
 # Product Requirements Document (PRD) — ClientPulse AI
 
-**Projeto:** ClientPulse AI — Relatórios Semanais de Progresso para Freelancers e Agências  
-**Equipa:** Elementos a confirmar pela equipa antes da entrega  
-**Repositório GitHub:** https://github.com/cabrito33/ClientPulse-AI  
-**Versão:** 2.0 (Alinhado com o Relatório de Validação)  
+**Projeto:** ClientPulse AI — Relatórios Semanais de Progresso para Freelancers e Agências\
+**Equipa:** Afonso Pedro (Backend), Ricardo Santos (Frontend), Manel Homem (Frontend), Miguel Lima (Backend) (confirmado em 17/11/2026)\
+**Repositório GitHub:** https://github.com/cabrito33/ClientPulse-AI\
+**Versão:** 2.0 (Alinhado com o Relatório de Validação)\
+
+
+## Nota de alinhamento — 17/11/2026
+
+Mantêm-se os objetivos e US01–US05 originais. Maria é um cenário ilustrativo, não uma entrevista nem uma medição de poupança. O calendário de cinco semanas é o plano, distinto dos três sprints observados no GitHub Projects. A versão inglesa foi alinhada com estas metas.
+
+Critérios ainda parciais: login sem `next` abre o dashboard, não inicia automaticamente o onboarding; voz depende do browser; o editor é texto/Markdown, não WYSIWYG; o horário é persistido (sexta-feira 09:00 UTC por defeito), sem editor completo na UI; o histórico do portal lista relatórios, sem abrir o texto integral de cada relatório antigo. Gemini/PAT/pg_cron são a implementação atual, não OpenAI/OAuth/Make. O contexto enviado à IA inclui cliente e notas do gestor: ver [PRIVACY.md](PRIVACY.md).
+
+Evidências e pendências: [FINAL_AUDIT.md](FINAL_AUDIT.md), [AGILE_EVIDENCE.md](AGILE_EVIDENCE.md) e [RESULTADOS.md](RESULTADOS.md).
 
 ---
 
@@ -13,7 +22,7 @@
 **ClientPulse AI** (SaaS B2B).
 
 ### 1.2 Descrição do Produto / Serviço
-O **ClientPulse AI** é uma plataforma SaaS que automatiza a geração e o envio de relatórios semanais de progresso para clientes. Conecta-se diretamente ao **GitHub Projects** (fonte única de dados no MVP), extrai as tarefas concluídas, bloqueios e próximos passos da semana, e utiliza inteligência artificial para redigir um relatório em linguagem de negócio clara e sem jargão técnico. 
+O **ClientPulse AI** é uma plataforma SaaS que automatiza a geração e o envio de relatórios semanais de progresso para clientes. Conecta-se diretamente ao **GitHub Projects** (fonte única de dados no MVP), extrai as tarefas concluídas, bloqueios e próximos passos da semana, e utiliza inteligência artificial para redigir um relatório em linguagem de negócio clara e sem jargão técnico.
 
 O envio é agendado (semanalmente por defeito), contando com revisão e aprovação prévia do profissional antes de ser disparado, ou envio direto automático (opcional). O cliente recebe um e-mail com o resumo e um link seguro para o **Portal do Cliente** (só de leitura, sem login) para consultar o histórico e métricas simples de entregas. A plataforma inclui ainda um **Assistente Conversacional (Chatbot/Voice Bot)** para guiar o onboarding do profissional e tirar dúvidas de utilização.
 
@@ -22,7 +31,7 @@ O envio é agendado (semanalmente por defeito), contando com revisão e aprovaç
 - **Segmento Secundário:** Freelancers e consultores seniores independentes que gerem em simultâneo entre 2 a 5 clientes de ticket médio-alto.
 
 ### 1.4 Âmbito e Divisão de Fases (MVP vs. Evolução Futura)
-- **Âmbito do MVP (Entregável do Projeto):** 
+- **Âmbito do MVP (Entregável do Projeto):**
   - Integração exclusiva com GitHub Projects API.
   - Geração de relatórios por IA (3 blocos: concluído, bloqueios, próximos passos).
   - Fluxo de aprovação manual do profissional com opção de *bypass* para envio direto.
@@ -42,7 +51,7 @@ A **Maria** é gestora numa pequena agência de desenvolvimento web de 4 pessoas
 
 Ao adotar o **ClientPulse AI**, a Maria realiza o onboarding em menos de 5 minutos: um **Assistente de Voz/Chat** guia-a na ligação da conta do GitHub da agência, no mapeamento do board e na criação do perfil dos seus clientes.
 
-Na sexta-feira às 09:00, o sistema compila a atividade do GitHub Projects e a IA gera automaticamente um rascunho de relatório executivo em Português. A Maria recebe um alerta no Dashboard, lê o resumo em 2 minutos, faz uma pequena afinação e clica em "Aprovar e Enviar". 
+Na sexta-feira às 09:00, o sistema compila a atividade do GitHub Projects e a IA gera automaticamente um rascunho de relatório executivo em Português. A Maria recebe um alerta no Dashboard, lê o resumo em 2 minutos, faz uma pequena afinação e clica em "Aprovar e Enviar".
 
 O cliente recebe um e-mail profissional com a síntese e um link seguro de acesso direto ao **Portal do Cliente**, onde visualiza os progressos da semana e o gráfico de tarefas concluídas por *sprint*, sem necessidade de criar conta ou gerir palavras-passe. A Maria reduz o tempo de gestão de relatórios em mais de 80% e elimina a ansiedade dos clientes.
 
@@ -156,12 +165,12 @@ O cliente recebe um e-mail profissional com a síntese e um link seguro de acess
 
 ## 8. Considerações Técnicas & Segurança
 
-- **APIs & Conectividade:** Uso da API REST / GraphQL do GitHub. Autenticação via OAuth 2.0 ou Personal Access Tokens armazenados de forma cifrada.
-- **Modelo de IA:** OpenAI API (`gpt-4o-mini` / `gpt-4o`) ou Google Gemini API, utilizando técnicas de *few-shot prompting* com regras estritas para evitar alucinações.
-- **Segurança de Dados & Privacidade:** 
+- **APIs & Conectividade:** GitHub Projects v2 via GraphQL e PAT cifrado; OAuth permanece evolução futura.
+- **Modelo de IA:** Google Gemini nas Edge Functions, configurável por `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL`. As alternativas iniciais não foram implementadas. O prompt reduz risco, sem garantir ausência de alucinações.
+- **Segurança de Dados & Privacidade:**
   - **Não armazenamento de código & Minimização de Dados (Issue #51):** Apenas metadados de tarefas (*title*, *description*, *status*, *assignees*, *labels*) são processados. O código-fonte dos repositórios nunca é lido nem guardado. Política completa de privacidade e minimização documentada em [`docs/PRIVACY.md`](PRIVACY.md).
   - **Secrets:** Chaves de API e credenciais guardadas estritamente em variáveis de ambiente (`.env`).
-  - **Portal do Cliente:** Acesso protegido por URLs obscuros com Tokens UUIDv4 de uso único ou com tempo de expiração.
+  - **Portal do Cliente:** Acesso protegido por URLs obscuros com tokens UUIDv4 reutilizáveis até revogação/expiração (NULL legado ainda aceite pela RPC).
 
 ---
 
@@ -183,7 +192,7 @@ O cliente recebe um e-mail profissional com a síntese e um link seguro de acess
 
 ## 10. Calendário e Milestones (5 Semanas)
 
-- **Semana 1: Alinhamento, Pesquisa e PRD (Concluído)**
+- **Semana 1: Alinhamento, Pesquisa e PRD**
   - Validação de mercado, consolidação do PRD e criação da pasta `/docs` no repositório GitHub (`/docs/PRD.md` e `/docs/RELATORIO_VALIDACAO.md`).
   - Configuração do GitHub Project da equipa com os campos customizados obrigatoriamente exigidos (*Priority*, *Status*, *Size*).
 

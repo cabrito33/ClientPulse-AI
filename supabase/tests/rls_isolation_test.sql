@@ -4,7 +4,7 @@
 -- Issue: [BE-02] [P1] Implementar Row Level Security #16
 --
 -- COMO EXECUTAR:
---   1. Abrir o Supabase SQL Editor (painel do projecto em supabase.com)
+--   1. Abrir uma base de dados LOCAL/de testes com todas as migrações aplicadas.
 --   2. Colar e executar este bloco completo.
 --   3. Verificar as mensagens NOTICE para PASS/FAIL.
 --   4. No final NUNCA deve aparecer "RLS FAIL". Se aparecer, rever as políticas.
@@ -14,11 +14,12 @@
 -- Requer permissões de superuser (disponível no SQL Editor do Supabase).
 -- ==============================================================================
 
+BEGIN;
 DO $$
 DECLARE
     -- UUIDs fictícios para os dois utilizadores de teste
-    v_user_a UUID := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-    v_user_b UUID := 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    v_user_a UUID := gen_random_uuid();
+    v_user_b UUID := gen_random_uuid();
 
     -- IDs a serem preenchidos durante o teste
     v_agency_a UUID;
@@ -26,7 +27,7 @@ DECLARE
     v_client_a UUID;
     v_client_b UUID;
     v_report_a UUID;
-    v_portal_token_a UUID := 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+    v_portal_token_a UUID := gen_random_uuid();
 
     -- Contadores para verificação
     v_count INT;
@@ -221,7 +222,7 @@ BEGIN
         ELSE
             RAISE EXCEPTION '  ❌ RLS FAIL — Utilizador B modificou % cliente(s) da Agência A!', v_count;
         END IF;
-    EXCEPTION WHEN OTHERS THEN
+    EXCEPTION WHEN insufficient_privilege THEN
         RAISE NOTICE '  ✅ PASS — UPDATE rejeitado com erro: %', SQLERRM;
     END;
 
@@ -312,7 +313,7 @@ BEGIN
         ELSE
             RAISE EXCEPTION '  ❌ FAIL — Anon conseguiu ler % cliente(s) directamente!', v_count;
         END IF;
-    EXCEPTION WHEN OTHERS THEN
+    EXCEPTION WHEN insufficient_privilege THEN
         RAISE NOTICE '  ✅ PASS — SELECT directo rejeitado pela base de dados: %', SQLERRM;
     END;
 
@@ -396,8 +397,6 @@ BEGIN
         RAISE EXCEPTION '  ❌ SECURITY FAIL — authenticated role conseguiu fazer INSERT direto em audit_logs!';
     EXCEPTION WHEN insufficient_privilege THEN
         RAISE NOTICE '  ✅ PASS — INSERT rejeitado com permission denied (insufficient_privilege)';
-    WHEN OTHERS THEN
-        RAISE NOTICE '  ✅ PASS — INSERT rejeitado pela base de dados: %', SQLERRM;
     END;
 
     -- =========================================================================
@@ -447,3 +446,4 @@ EXCEPTION WHEN OTHERS THEN
     DELETE FROM auth.users WHERE id IN (v_user_a, v_user_b);
     RAISE EXCEPTION 'TESTE FALHOU: %', SQLERRM;
 END $$;
+ROLLBACK;

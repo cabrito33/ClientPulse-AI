@@ -1,126 +1,49 @@
-# Política de Privacidade e Minimização de Dados Enviados à IA
+# Privacy and data minimization — ClientPulse AI
 
-> **Projeto:** ClientPulse AI — Relatórios Semanais de Progresso para Freelancers e Agências  
-> **Identificador da Issue:** [DOC-04] #51 — *Aviso de privacidade e minimização dos dados enviados à IA*  
-> **Classificação:** Segurança, Privacidade & Governação de Dados  
-> **Versão:** 1.0 (Alinhada com Sprint 3 e Relatório de Validação)  
-> **Última Atualização:** Novembro de 2026
+Implementation notice reviewed on 2026-11-18. This describes observed code and remaining limitations; it is not a legal compliance certification or a claim about provider contracts.
 
----
+## Data flow
 
-## 1. Enquadramento e Motivação
+The GitHub integration reads project/card metadata, not repository source files, commits or diffs. The GraphQL runtime allowlist is tested locally. Before report generation, `minimizeTaskForAI` selects task `title`, sanitized/truncated `description` (300 characters), `status`, `labels` and `assignee`. Source: [github.ts](../supabase/functions/_shared/github.ts) and [gemini.ts](../supabase/functions/_shared/gemini.ts).
 
-No desenvolvimento do **ClientPulse AI**, a privacidade dos dados de projetos de software constitui um requisito de primeira ordem. Na análise de risco documentada no `docs/RELATORIO_VALIDACAO.md` (Secção 7), identificou-se o seguinte risco específico:
+Report prompts also contain client context (including name/company, tone and language), dates and manager notes. Onboarding sends chat content after recognized PAT masking. Titles, notes and descriptions are free text: removing code fences and selecting fields cannot guarantee that secrets, personal data or copied source code are absent. Users should avoid entering unnecessary sensitive information; the UI notices identify tasks, client context and chat as applicable.
 
-> *"Privacidade dos dados do cliente: o conteúdo das tarefas é enviado a um modelo de IA externo. Mitigação: ler e enviar apenas os dados estritamente necessários, não armazenar código-fonte, evitar dados sensíveis e informar o utilizador."*
+## Services and information handled
 
-Em estrita consonância com o **Regulamento Geral sobre a Proteção de Dados (RGPD / GDPR - Artigo 5.º, n.º 1, alínea c)** — *Princípio da Minimização dos Dados* —, o ClientPulse AI garante que apenas os dados adequados, pertinentes e estritamente limitados ao indispensável para a síntese executiva são processados e transmitidos a subprocessadores externos de Inteligência Artificial.
+| Service | Purpose and information | What has not been verified |
+| --- | --- | --- |
+| GitHub | PAT-authenticated project metadata reads | Exact private/org project permissions for each user's token |
+| Google Gemini | Minimized task metadata, client context/notes and sanitized chat text | Account plan, retention, training use and region; consult the applicable account terms before handling real sensitive data |
+| Supabase | Auth identity, agency/client records, reports, tokens, delivery/audit telemetry | Production retention/backups and complete tenant isolation were not tested in this audit |
+| Resend | Recipient, report body and portal link | Real delivery and retention settings; existing authorized test configuration remains unchanged |
+| Vercel | Next frontend/server routes | Production logs, retention and deployment configuration were not revalidated |
 
----
+No blanket claim of “no training”, transient retention or TLS 1.3 across every service is made from code alone. Credentials and connection settings need appropriate server-side configuration.
 
-## 2. Subprocessadores Externos e Serviços de Terceiros
+## Credentials and access controls
 
-Para prestar as funcionalidades de automação e comunicação, o ClientPulse AI interage com os seguintes subprocessadores e APIs externas:
+- PATs are encrypted with AES-256-GCM using `PAT_ENCRYPTION_KEY`: 32 decoded bytes supplied as base64. Migration 007 introduces encrypted storage; migration 010 restricts credential-column reads. Legacy plaintext fallback remains in backend code; absence of plaintext rows in production was not established.
+- Supabase service-role keys and encryption keys belong only on the server. Public anon keys rely on RLS and are not privileged secrets.
+- Management functions validate user/agency or the scheduler secret. CORS does not authenticate non-browser clients.
+- RLS is enabled and the `success_metrics` view is security-invoker. Separate agency/client/report foreign keys still allow integrity concerns that require real database tests and a reviewed composite-key migration.
+- The Next email webhook verifies its signature; the separate legacy tracking function needs additional protection. See [FINAL_AUDIT.md](FINAL_AUDIT.md).
 
-| Subprocessador | Função / Propósito | Dados Partilhados | Garantia de Retenção / Treino |
-| :--- | :--- | :--- | :--- |
-| **Google Cloud / Google AI (Gemini API)** | Síntese de relatórios executivos de 3 blocos e assistente conversacional de onboarding (PulseBot). | Metadados estritamente minimizados de tarefas e mensagens de suporte. | Chamadas via API de inferência comercial sem retenção para treino de modelos base. |
-| **GitHub API (GraphQL Projects v2)** | Leitura do estado de cartões, colunas e validação do token PAT da agência. | Leitura do status e campos dos cartões do board selecionado. | Acesso estritamente de leitura (escopo `read:project`). |
-| **Resend** | Disparo transacional de e-mails de notificação com link seguro para o portal. | Nome e e-mail do cliente, corpo do relatório aprovado e link do portal. | Retenção transitória para registo de entrega e eventos de abertura (tracking). |
-| **Supabase (PostgreSQL / Edge Runtime)** | Autenticação, persistência relacional com RLS e execução segura em backend Deno. | Dados de conta da agência, clientes, relatórios e tarefas. | Criptografia em trânsito (TLS 1.3) e cifra de credenciais em repouso. |
+## Portal links and opens
 
----
+Portal links use randomly generated UUIDv4 tokens (122 random bits in a 128-bit UUID), separate from the client ID. Anyone possessing a valid link can read the published report. New links default to 90 days; the data RPC still accepts legacy NULL expiry. Inactive/revoked/expired links are rejected, and only sent report text is returned. Broader client metadata and metrics remain a minimization concern.
 
-## 3. Matriz de Minimização de Dados (Data Minimization Matrix)
+Renewal first revokes the old token and then issues the replacement. Revocation errors now stop issuance, but the multi-write operation is not transactional. Email token upserts also need a lifecycle review. Do not publish production portal URLs in GitHub, screenshots or logs.
 
-O ClientPulse AI estabelece um filtro explícito antes de qualquer envio de informação ao modelo de Inteligência Artificial (Google Gemini).
+First-open telemetry is not proof of human receipt: server rendering, metadata fetches, link previews and mail clients can produce opens. Anonymous webhook/pixel writes have separate RLS limitations.
 
-### 3.1 Campos Estritamente Permitidos e Enviados à IA
+## Optional voice and human review
 
-Apenas os seguintes **5 campos** relativos a cada tarefa/cartão são transmitidos ao modelo:
+Web Speech recognition depends on browser capability and permission. ClientPulse does not implement audio recording/storage; a browser vendor may process speech using its own service and terms. Transcribed text is placed in the input for review rather than automatically sent. Text input remains available.
 
-| Campo | Tipo | Descrição e Higienização |
-| :--- | :--- | :--- |
-| `title` | `string` | Título sumário da tarefa ou funcionalidade (ex.: *"Implementar autenticação OAuth"*). |
-| `description` | `string` (opcional) | Descrição textual da tarefa, submetida a **higienização automática** (remoção de blocos de código markdown `` ``` `` e backticks) e truncada até ao limite de 300 caracteres para mitigar fugas de dados e token bloat. |
-| `status` | `string` | Nome da coluna ou estado no GitHub Project (ex.: *"Done"*, *"In Progress"*, *"Blocked"*). |
-| `labels` | `string[]` | Etiquetas temáticas associadas à tarefa (ex.: `["feature", "backend"]`). |
-| `assignee` | `string \| null` | Nome de utilizador (login GitHub) do responsável pela entrega. |
+Reports default to drafts for manual review. Explicitly enabling automatic sending bypasses this review when AI succeeds; deterministic fallback forces a draft. Prompts and schemas reduce hallucination risk but do not prove factual accuracy.
 
-### 3.2 Dados Explicitamente Proibidos e NUNCA Transmitidos nem Armazenados
+## Evidence and contact
 
-O sistema implementa barreiras de código que impedem categoricamente o envio dos seguintes elementos:
+Screenshots and E2E fixtures use synthetic `example.test` identities and dummy UUIDs, clearly labelled as tests. No real provider credentials or production data are required. Real-use metrics remain [unmeasured](RESULTADOS.md).
 
-* ❌ **Código-Fonte e Repositórios:** O ClientPulse AI nunca acede, nunca descarrega, nunca clona e nunca analisa ficheiros de código-fonte, commits, branches ou diffs de Pull Requests.
-* ❌ **Credenciais e Segredos:** Tokens de Acesso Pessoal (PATs do GitHub), chaves de API, variáveis de ambiente ou senhas nunca são enviados nos prompts de geração.
-* ❌ **Identificadores Internos de Sistema:** UUIDs de base de dados (`id`, `client_id`, `report_id`), URLs completos de repositórios privados e tokens de webhook são descartados na camada de minimização (`minimizeTaskForAI`).
-* ❌ **Informação Financeira ou Pessoal Extensiva:** Dados bancários, moradas, números de telefone ou tabelas salariais não fazem parte do modelo de dados nem chegam à IA.
-
----
-
-## 4. Medidas Técnicas de Proteção e Cifra
-
-Para assegurar a confidencialidade e integridade dos dados durante todo o seu ciclo de vida, são aplicadas as seguintes medidas técnicas:
-
-1. **Cifra de Credenciais em Repouso (AES-GCM 256-bit):**
-   * Os Personal Access Tokens (PATs) do GitHub fornecidos pelos gestores de agência são cifrados antes de serem persistidos na tabela `github_integrations` utilizando uma chave mestra independente (`ENCRYPTION_KEY`).
-   * Em momento algum o PAT em texto claro é exposto nas respostas das APIs ou em logs da aplicação.
-2. **Mascaramento no Assistente Conversacional (PulseBot):**
-   * O frontend do chat de onboarding mascara imediatamente qualquer token inserido (formato `ghp_...` ou `github_pat_...`) substituindo-o por marcadores opacos (`••••••••`) no histórico de conversação do utilizador.
-   * O backend sanitiza a mensagem antes de submeter a qualquer modelo de linguagem, garantindo que o token não circula no prompt.
-3. **Higienização e Strip de Código em Descrições:**
-   * A função `sanitizeTaskDescription` em `supabase/functions/_shared/github.ts` remove expressões regulares de blocos de código (ex.: `` ```ts ... ``` ``) e fragmentos com backticks antes de qualquer agrupamento.
-4. **Isolamento Multitenant via Row Level Security (RLS):**
-   * Todas as tabelas no PostgreSQL (`agencies`, `clients`, `reports`, `report_tasks`, `github_integrations`) possuem políticas RLS ativas vinculadas ao `auth.uid()`, impossibilitando o acesso cruzado de dados entre diferentes agências.
-5. **Validação em Runtime de Consultas GraphQL (Allowlist Estrita - BE-09 / Issue #23):**
-   * Antes de disparar qualquer pedido ao endpoint GraphQL do GitHub, a função `validateGraphQLQuery` analisa estruturalmente a query contra uma allowlist estrita de campos de ProjectV2 (`ALLOWED_GRAPHQL_FIELDS`).
-   * Qualquer tentativa de aceder a ficheiros, blobs, árvores git (`tree`), commits ou repositórios é bloqueada imediatamente em memória com `SecurityError`, impedindo a saída de qualquer pacote HTTP para a infraestrutura do GitHub.
-   * Suíte automatizada de testes de segurança em runtime disponível em `scripts/test-runtime-security.mjs` (`npm test`).
-6. **Reconhecimento de Voz no Onboarding (FE-10):**
-   * O assistente PulseBot disponibiliza entrada por voz opcional através da Web Speech API do browser (`SpeechRecognition` / `webkitSpeechRecognition`, pt-PT).
-   * O áudio do utilizador **não é gravado, guardado nem transmitido** pela aplicação ClientPulse AI.
-   * Em determinados navegadores (como Google Chrome ou Apple Safari), o reconhecimento de voz é realizado pelo serviço do próprio fornecedor do browser, sujeito à sua respetiva política de privacidade. O texto transcrito é colocado na caixa de texto local para revisão do utilizador e nunca é enviado automaticamente.
-   * A interface adverte explicitamente: *"Não digas o teu token em voz alta: cola-o no campo"*.
-   * A voz funciona no Chrome, Edge e Safari; no Brave e no Firefox está indisponível.
-
----
-
-## 5. Transparência e Princípio "Human-in-the-Loop"
-
-A inteligência artificial generativa atua estritamente como um **mecanismo de redação assistida**, nunca como um decisor autónomo não supervisionado.
-
-### 5.1 Avisos Visíveis na Interface (UI Disclaimers)
-O utilizador é informado de forma transparente sobre o uso de IA externa em todos os pontos de contacto relevantes:
-1. **Ecrã de Revisão do Relatório (`/dashboard/reports/[id]`):**  
-   Um painel informativo com ícone de escudo (`ShieldCheck`) indica claramente:  
-   *"Síntese gerada por IA externa (Google Gemini) · Minimização de Dados: Apenas os metadados estritamente necessários das tarefas (título, descrição, estado, etiquetas e responsáveis) foram transmitidos à IA. O código-fonte dos teus repositórios nunca é lido nem guardado. Por favor, revê e afina os blocos abaixo antes de aprovar o envio."*
-2. **Chatbot de Onboarding (`/onboarding`):**  
-   Abaixo da caixa de envio do assistente PulseBot é exibido o aviso:  
-   *"Aviso de Privacidade: O PulseBot e a geração de relatórios utilizam IA externa (Google Gemini). Apenas metadados de tarefas são processados; nenhum código-fonte é acedido ou armazenado."*
-3. **Ações de Geração no Dashboard:**  
-   Junto ao botão *"Gerar relatório agora"*, é indicado explicitamente que a síntese é realizada por IA externa com base estrita em metadados.
-
-### 5.2 Controlo Humano Obrigatório por Defeito
-* Por defeito, todos os relatórios gerados por IA são guardados no estado `draft` (rascunho).
-* O gestor da agência tem total liberdade para editar, adicionar ou remover qualquer frase antes de autorizar o envio ao cliente final.
-* O modo de envio direto sem aprovação (`auto_send_enabled`) está desativado por omissão e só entra em vigor após ativação deliberada pelo profissional.
-
----
-
-## 6. Portal do Cliente sem Login (Zero-Login Security)
-
-O acesso do cliente final aos relatórios e métricas de sprint obedece às seguintes garantias:
-* **Tokens UUIDv4 Não Adivinháveis:** Os links enviados por e-mail contêm identificadores únicos com 128 bits de entropia gerados criptograficamente.
-* **Acesso Estritamente de Leitura (Read-Only):** O cliente final não tem capacidade de editar tarefas, aceder a painéis de configuração ou interagir com os repositórios GitHub.
-* **Revogabilidade:** A agência pode a qualquer momento revogar ou regenerar o token de acesso de um cliente a partir do seu painel de controlo.
-
----
-
-## 7. Conformidade e Contactos
-
-Para esclarecimento de dúvidas sobre a recolha, tratamento e minimização de dados no ClientPulse AI, ou para solicitar a eliminação de dados de conta e integrações associadas, os utilizadores podem contactar a equipa técnica através do repositório oficial do projeto:
-* **Repositório GitHub:** [cabrito33/ClientPulse-AI](https://github.com/cabrito33/ClientPulse-AI)
-* **Documentação Técnica Relacionada:**
-  - [docs/ARCHITECTURE.md](ARCHITECTURE.md)
-  - [docs/PRD.md](PRD.md)
-  - [docs/RELATORIO_VALIDACAO.md](RELATORIO_VALIDACAO.md)
+For access/deletion questions contact the team through the [project repository](https://github.com/cabrito33/ClientPulse-AI), without posting personal data or valid tokens in public issues. Related: [architecture](ARCHITECTURE.md), [database](DATABASE.md), [testing](TESTING.md).

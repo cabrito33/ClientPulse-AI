@@ -114,12 +114,12 @@ export async function fetchProjectColumnsAction(
     const columns: string[] = rawCols
       .map((c) => (typeof c === "string" ? c : c?.name || ""))
       .filter((c) => Boolean(c));
+    if (columns.length === 0) {
+      return { success: false, error: "Este board não tem colunas de estado disponíveis. Configura o campo Status no GitHub e tenta novamente." };
+    }
     return {
       success: true,
-      columns:
-        columns.length > 0
-          ? columns
-          : ["A Fazer", "Em Curso", "Bloqueado", "Concluído"],
+      columns,
       projectTitle: res?.projectTitle,
     };
   } catch (err: unknown) {
@@ -178,6 +178,13 @@ export async function completeOnboardingAction(
   | { success: false; error: string }
 > {
   try {
+    if (!input.clientName?.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.clientEmail?.trim() || "")) {
+      return { success: false, error: "Preenche o nome e um endereço de e-mail válido para o cliente." };
+    }
+    if (!input.projectId?.trim() || !input.columnMapping?.done || !input.columnMapping?.in_progress) {
+      return { success: false, error: "Seleciona um board e mapeia as colunas de tarefas concluídas e em curso." };
+    }
+    input = { ...input, clientName: input.clientName.trim(), clientEmail: input.clientEmail.trim() };
     const supabase = await createClient();
     const {
       data: { user },
@@ -226,18 +233,20 @@ export async function completeOnboardingAction(
 
     // Check if client with this email already exists for this agency to avoid duplicate errors
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: existingClient } = await (supabase.from("clients") as any)
+    const { data: existingClient, error: lookupError } = await (supabase.from("clients") as any)
       .select("id")
       .eq("agency_id", agencyId)
       .eq("email", input.clientEmail)
       .maybeSingle();
+
+    if (lookupError) return { success: false, error: "Não foi possível verificar o cliente. Tenta novamente." };
 
     let clientId: string;
 
     if (existingClient?.id) {
       clientId = existingClient.id as string;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase.from("clients") as any)
+      const { error: updateError } = await (supabase.from("clients") as any)
         .update({
           name: input.clientName,
           company_name: input.clientName,
@@ -249,22 +258,27 @@ export async function completeOnboardingAction(
           column_mapping: {
             done: [input.columnMapping.done],
             in_progress: [input.columnMapping.in_progress],
-            blocked: [input.columnMapping.blocked],
+            blocked: input.columnMapping.blocked ? [input.columnMapping.blocked] : [],
           },
         })
         .eq("id", clientId);
 
+      if (updateError) return { success: false, error: "Não foi possível guardar as alterações do cliente. Tenta novamente." };
+
       // Ensure active portal token record with 90-day expiration (BE-19)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: updatedClient } = await (supabase.from("clients") as any)
+      const { data: updatedClient, error: tokenReadError } = await (supabase.from("clients") as any)
         .select("portal_token")
         .eq("id", clientId)
         .single();
+      if (tokenReadError || !updatedClient?.portal_token) {
+        return { success: false, error: "Não foi possível obter o link do portal. Tenta novamente." };
+      }
       if (updatedClient?.portal_token) {
         const expirationDays = parseInt(process.env.PORTAL_TOKEN_EXPIRATION_DAYS || "90", 10) || 90;
         const expiresAt = new Date(Date.now() + expirationDays * 86400000).toISOString();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase.from("portal_tokens") as any).upsert(
+        const { error: tokenError } = await (supabase.from("portal_tokens") as any).upsert(
           {
             client_id: clientId,
             agency_id: agencyId,
@@ -275,6 +289,7 @@ export async function completeOnboardingAction(
           },
           { onConflict: "token" }
         );
+        if (tokenError) return { success: false, error: "O cliente foi guardado, mas não foi possível preparar o link do portal. Tenta novamente." };
       }
     } else {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -293,7 +308,7 @@ export async function completeOnboardingAction(
           column_mapping: {
             done: [input.columnMapping.done],
             in_progress: [input.columnMapping.in_progress],
-            blocked: [input.columnMapping.blocked],
+            blocked: input.columnMapping.blocked ? [input.columnMapping.blocked] : [],
           },
           auto_send_enabled: false,
         })
@@ -313,7 +328,7 @@ export async function completeOnboardingAction(
         const expirationDays = parseInt(process.env.PORTAL_TOKEN_EXPIRATION_DAYS || "90", 10) || 90;
         const expiresAt = new Date(Date.now() + expirationDays * 86400000).toISOString();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase.from("portal_tokens") as any).upsert(
+        const { error: tokenError } = await (supabase.from("portal_tokens") as any).upsert(
           {
             client_id: clientId,
             agency_id: agencyId,
@@ -324,6 +339,7 @@ export async function completeOnboardingAction(
           },
           { onConflict: "token" }
         );
+        if (tokenError) return { success: false, error: "O cliente foi guardado, mas não foi possível preparar o link do portal. Tenta novamente." };
       }
     }
 

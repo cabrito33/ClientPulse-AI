@@ -45,3 +45,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local browser verification
+/.next-e2e/
+/test-results/
+/playwright-report/

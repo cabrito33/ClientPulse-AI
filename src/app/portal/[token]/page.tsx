@@ -75,7 +75,7 @@ export default async function PortalPage({ params }: PortalPageProps) {
 
               <p className="mt-3 text-sm leading-relaxed text-muted">
                 {isExpired
-                  ? "Por motivos de segurança e proteção de dados, os links de acesso ao portal do cliente possuem uma validade máxima de 90 dias."
+                  ? "Por motivos de segurança e proteção de dados, este link ultrapassou o prazo de validade definido pela agência."
                   : "Foi gerado um novo link de segurança para aceder ao portal deste projeto, tornando este link anterior inativo."}
               </p>
 
@@ -354,7 +354,7 @@ export default async function PortalPage({ params }: PortalPageProps) {
             ClientPulse AI — Portal exclusivo de visualização para {client.name}.
           </p>
           <p className="mt-1">
-            Todos os dados e nomes apresentados nesta página são fictícios para fins de demonstração.
+            Acesso de leitura aos relatórios enviados pela sua equipa. Não partilhe este link com terceiros.
           </p>
         </footer>
       </main>

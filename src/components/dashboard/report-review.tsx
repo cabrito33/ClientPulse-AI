@@ -370,7 +370,7 @@ export function ReportReview({
               </span>
             </p>
             <p className="mt-0.5">
-              Apenas os metadados estritamente necessários das tarefas (título, descrição, estado, etiquetas e responsáveis) foram transmitidos à IA. O código-fonte dos teus repositórios nunca é lido nem guardado. Como qualquer modelo de IA pode cometer imprecisões, revê e afina os blocos abaixo antes de aprovar o envio.
+              A IA recebe metadados das tarefas, contexto do cliente e notas do gestor. A integração não lê ficheiros de código. Evita dados sensíveis nos campos de texto e revê os blocos antes de aprovar: a IA pode cometer imprecisões.
             </p>
           </div>
         </div>

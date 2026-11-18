@@ -725,7 +725,7 @@ function Pricing() {
 const faqs = [
   {
     q: "Que dados do GitHub é que o ClientPulse AI lê?",
-    a: "Apenas metadados de tarefas: título, descrição, estado, etiquetas e responsáveis das issues do GitHub Projects. O código-fonte dos repositórios nunca é lido, analisado nem armazenado.",
+    a: "Metadados de tarefas (título, descrição, estado, etiquetas e responsáveis), contexto do cliente e notas do gestor. O PulseBot processa as mensagens de suporte. A integração não lê ficheiros de código; evita colocar dados sensíveis nos textos.",
   },
   {
     q: "O texto é escrito pela IA sem ninguém ver?",

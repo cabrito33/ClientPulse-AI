@@ -56,6 +56,8 @@ export default function OnboardingPage() {
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [isLoadingColumns, setIsLoadingColumns] = useState(false);
   const [projectsError, setProjectsError] = useState<string | null>(null);
+  const [columnsError, setColumnsError] = useState<string | null>(null);
+  const columnsRequest = useRef(0);
   const [createdReportId, setCreatedReportId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -66,8 +68,8 @@ export default function OnboardingPage() {
     blocked: "Bloqueado",
   });
   const [clientData, setClientData] = useState({
-    name: "Atelier Mira",
-    email: "joana@ateliermira.pt",
+    name: "",
+    email: "",
     tone: "formal",
     language: "pt",
     frequency: "weekly",
@@ -243,16 +245,17 @@ export default function OnboardingPage() {
   }
 
   const handleSelectProject = useCallback(async (proj: OnboardingProject) => {
+    const requestId = ++columnsRequest.current;
     setSelectedProject(proj);
-    if (proj.columns && proj.columns.length > 0) {
-      return;
-    }
+    setColumnsError(null);
     setIsLoadingColumns(true);
     try {
-      const colRes = await fetchProjectColumnsAction(proj.id);
+      const colRes = proj.columns.length > 0
+        ? { success: true as const, columns: proj.columns }
+        : await fetchProjectColumnsAction(proj.id);
+      if (requestId !== columnsRequest.current) return;
       if (colRes.success && colRes.columns.length > 0) {
         const cols = colRes.columns;
-        proj.columns = cols;
         setProjects((prev) =>
           prev.map((p) => (p.id === proj.id ? { ...p, columns: cols } : p))
         );
@@ -275,18 +278,20 @@ export default function OnboardingPage() {
         const blockMatch =
           lowerCols.find((c) =>
             /block|bloque|imped|paus/i.test(c.low)
-          )?.raw || cols[0];
+          )?.raw || "";
 
         setColumnMap({
           done: doneMatch,
           in_progress: inProgMatch,
           blocked: blockMatch,
         });
+      } else {
+        setColumnsError(!colRes.success ? colRes.error : "Não foram encontradas colunas de estado neste board.");
       }
-    } catch (err) {
-      console.error("Erro ao carregar colunas:", err);
+    } catch {
+      if (requestId === columnsRequest.current) setColumnsError("Não foi possível carregar as colunas. Seleciona o board para tentar novamente.");
     } finally {
-      setIsLoadingColumns(false);
+      if (requestId === columnsRequest.current) setIsLoadingColumns(false);
     }
   }, []);
 
@@ -621,7 +626,7 @@ export default function OnboardingPage() {
             <p className="mt-2.5 flex items-center gap-1.5 text-[11px] text-muted-soft">
               <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" />
               <span>
-                <strong>Aviso de Privacidade:</strong> O PulseBot e a geração de relatórios utilizam IA externa (Google Gemini). Apenas metadados de tarefas são processados; nenhum código-fonte é acedido ou armazenado.
+                <strong>Aviso de Privacidade:</strong> O PulseBot e os relatórios utilizam IA externa (Google Gemini): mensagens, metadados de tarefas e contexto do cliente. A integração não lê ficheiros de código. Evita dados sensíveis nos textos.
               </span>
             </p>
           </div>
@@ -679,11 +684,13 @@ export default function OnboardingPage() {
                 {projects.map((p) => {
                   const isSelected = selectedProject?.id === p.id;
                   return (
-                    <div
+                    <button
+                      type="button"
+                      aria-pressed={isSelected}
                       key={p.id}
                       onClick={() => handleSelectProject(p)}
                       className={cn(
-                        "cursor-pointer rounded-xl border p-4 transition-all",
+                        "w-full cursor-pointer rounded-xl border p-4 text-left transition-all",
                         isSelected
                           ? "border-accent bg-accent-soft/30 shadow-sm"
                           : "border-line bg-paper/40 hover:border-line-strong hover:bg-sand/40",
@@ -711,7 +718,7 @@ export default function OnboardingPage() {
                           <span className="h-6 w-6 rounded-full border border-line-strong" />
                         )}
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -733,10 +740,11 @@ export default function OnboardingPage() {
               </div>
             )}
 
+            {columnsError && <p role="alert" className="mt-4 text-xs text-accent">{columnsError}</p>}
             <div className="mt-8 flex justify-end">
               <button
                 type="button"
-                disabled={!githubConnected || !selectedProject || !selectedProject.id || isLoadingColumns || isLoadingProjects}
+                disabled={!githubConnected || !selectedProject?.columns.length || Boolean(columnsError) || isLoadingColumns || isLoadingProjects}
                 onClick={() => setStep(2)}
                 className={buttonClass("primary", "md")}
               >
@@ -779,6 +787,7 @@ export default function OnboardingPage() {
                     Tarefas Concluídas
                   </label>
                   <select
+                    aria-label="Tarefas Concluídas"
                     value={columnMap.done}
                     onChange={(e) => setColumnMap({ ...columnMap, done: e.target.value })}
                     className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-teal"
@@ -799,6 +808,7 @@ export default function OnboardingPage() {
                     Tarefas Em Curso
                   </label>
                   <select
+                    aria-label="Tarefas Em Curso"
                     value={columnMap.in_progress}
                     onChange={(e) => setColumnMap({ ...columnMap, in_progress: e.target.value })}
                     className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-gold"
@@ -819,10 +829,12 @@ export default function OnboardingPage() {
                     Tarefas Bloqueadas
                   </label>
                   <select
+                    aria-label="Tarefas Bloqueadas"
                     value={columnMap.blocked}
                     onChange={(e) => setColumnMap({ ...columnMap, blocked: e.target.value })}
                     className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
                   >
+                    <option value="">Sem coluna de bloqueios</option>
                     {(selectedProject?.columns?.length ? selectedProject.columns : [columnMap.blocked]).map((c) => (
                       <option key={c} value={c}>
                         {c}
@@ -897,7 +909,7 @@ export default function OnboardingPage() {
                 <label className="text-xs font-semibold uppercase tracking-wider text-muted-soft">
                   Nome do Cliente / Empresa
                 </label>
-                <input
+                <input aria-label="Nome do Cliente / Empresa"
                   type="text"
                   value={clientData.name}
                   onChange={(e) => setClientData({ ...clientData, name: e.target.value })}
@@ -909,7 +921,7 @@ export default function OnboardingPage() {
                 <label className="text-xs font-semibold uppercase tracking-wider text-muted-soft">
                   E-mail do Cliente
                 </label>
-                <input
+                <input aria-label="E-mail do Cliente"
                   type="email"
                   value={clientData.email}
                   onChange={(e) => setClientData({ ...clientData, email: e.target.value })}
@@ -921,7 +933,7 @@ export default function OnboardingPage() {
                 <label className="text-xs font-semibold uppercase tracking-wider text-muted-soft">
                   Tom de Comunicação
                 </label>
-                <select
+                <select aria-label="Tom de Comunicação"
                   value={clientData.tone}
                   onChange={(e) => setClientData({ ...clientData, tone: e.target.value })}
                   className="mt-1.5 w-full rounded-lg border border-line bg-paper/60 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
@@ -936,7 +948,7 @@ export default function OnboardingPage() {
                 <label className="text-xs font-semibold uppercase tracking-wider text-muted-soft">
                   Idioma do Relatório
                 </label>
-                <select
+                <select aria-label="Idioma do Relatório"
                   value={clientData.language}
                   onChange={(e) => setClientData({ ...clientData, language: e.target.value })}
                   className="mt-1.5 w-full rounded-lg border border-line bg-paper/60 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
@@ -998,6 +1010,8 @@ export default function OnboardingPage() {
               O projeto <strong className="font-medium text-ink-soft">{selectedProject?.title}</strong> está agora ligado ao cliente <strong className="font-medium text-ink-soft">{clientData.name}</strong>.
             </p>
 
+            {!createdReportId && <p role="status" className="mt-4 text-sm text-accent">O cliente foi guardado, mas o primeiro relatório ainda não está disponível. Podes tentar gerá-lo no dashboard.</p>}
+
             <div className="mx-auto mt-6 max-w-md rounded-xl border border-line bg-paper/60 p-4 text-left">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-soft">
                 Resumo da Configuração
@@ -1029,7 +1043,7 @@ export default function OnboardingPage() {
                 href={createdReportId ? `/dashboard/reports/${createdReportId}` : "/dashboard"}
                 className={buttonClass("primary", "md")}
               >
-                Rever rascunho gerado
+                {createdReportId ? "Rever rascunho gerado" : "Consultar cliente no dashboard"}
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link

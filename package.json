@@ -18,10 +18,13 @@
     "test:voice": "node --experimental-strip-types scripts/test-voice-transcript.mjs",
     "test:summary": "node --experimental-strip-types scripts/test-dashboard-summary.mjs",
     "test:editing": "node --experimental-strip-types scripts/test-report-editing.mjs",
-    "test": "npm run test:security && npm run test:bypass && npm run test:mapping && npm run test:tracking && npm run test:dispatch && npm run test:email && npm run test:pat && npm run test:ratelimit && npm run test:voice && npm run test:summary && npm run test:editing && npm run test:email-security",
+    "test": "npm run test:security && npm run test:bypass && npm run test:mapping && npm run test:tracking && npm run test:dispatch && npm run test:email && npm run test:pat && npm run test:ratelimit && npm run test:voice && npm run test:summary && npm run test:editing && npm run test:email-security && npm run test:finalization && npm run test:docs",
     "check:use-server": "node scripts/check-use-server.mjs",
     "check": "npm run lint && npx tsc --noEmit && npm run check:use-server && npm run test && cross-env NEXT_DIST_DIR=.next-check next build",
-    "test:email-security": "node --experimental-strip-types scripts/test-email-security.mjs"
+    "test:email-security": "node --experimental-strip-types scripts/test-email-security.mjs",
+    "test:finalization": "node --experimental-strip-types scripts/test-finalization.mjs",
+    "test:e2e": "playwright test",
+    "test:docs": "node scripts/check-doc-links.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
@@ -35,6 +38,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@playwright/test": "1.65.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

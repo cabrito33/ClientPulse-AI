@@ -71,7 +71,7 @@ export function DashboardTopbar({
         <nav aria-label="Navegação do dashboard (móvel)" className="border-t border-line bg-paper px-3 py-3">
           {links.map((l) => (
             <Link
-              key={l.href}
+              key={l.label}
               href={l.href}
               onClick={() => setOpen(false)}
               className={cn(

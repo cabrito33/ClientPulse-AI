@@ -55,7 +55,7 @@ export function GenerateReportButton({
         )}
       </button>
       <span className="text-[10.5px] text-muted-soft">
-        Síntese por IA (Google Gemini) · Apenas metadados
+        Síntese por IA (Google Gemini) · Tarefas e contexto do cliente
       </span>
       {error && (
         <p className="flex items-center gap-1 text-[11px] font-medium text-accent">

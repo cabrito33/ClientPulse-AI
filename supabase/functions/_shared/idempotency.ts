@@ -3,9 +3,8 @@
  * ClientPulse AI — Report Idempotency & ISO Week Deduplication Helper
  * File: supabase/functions/_shared/idempotency.ts
  *
- * Enforces acceptance criteria:
- * - A scheduled report or auto-send direct dispatch must NEVER execute twice
- *   for the same client in the same ISO week/period.
+ * Detects existing reports in an ISO week for sequential deduplication.
+ * This lookup is not an atomic claim and does not prevent concurrent sends.
  * ==============================================================================
  */
 
@@ -13,7 +12,7 @@
  * Calculates the ISO week number and ISO week-year for a given date.
  */
 export function getIsoWeekYear(d: Date): { year: number; week: number } {
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
   const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
   const weekNo = Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
