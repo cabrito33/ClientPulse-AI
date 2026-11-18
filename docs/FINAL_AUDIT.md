@@ -4,6 +4,8 @@ Review completed locally on 2026-11-18, continuing the 2026-11-17 audit. Branch:
 
 This is an academic readiness review, not a production security certification. The app has substantial implementation and reproducible local evidence. Real provider delivery, SQL isolation and the PRD's user outcomes remain unproven by this audit.
 
+**Pre-merge follow-up (2026-11-18):** the owner reports hosted `generate-report` version 31 still contains undefined `currentIso.week`. The fix is in this PR but has not been deployed by this audit. [API.md](API.md#manual-publication-and-smoke-test-after-pr-60-is-merged) now documents the complete shared-module bundle, manual publication after merge and a draft-only smoke test using the actual `bypass: false` contract. Deployment and remote verification remain pending; no merge, deploy, Resend change or production database permission change was performed. All residual risks below remain open.
+
 ## Corrections and evidence
 
 | Problem and impact | Local correction | Evidence |

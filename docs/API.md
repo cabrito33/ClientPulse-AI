@@ -25,7 +25,9 @@ Classic `read:project`/`repo` scopes and fine-grained token permissions are dist
 
 ## POST generate-report
 
-[Implementation](../supabase/functions/generate-report/index.ts). Accepts user JWT or scheduled secret. Body: required `client_id`; optional `period_days`, `custom_notes`, `bypass_approval`.
+[Implementation](../supabase/functions/generate-report/index.ts). Accepts user JWT or scheduled secret. Body: required `client_id`; optional `period_days`, `custom_notes`, `bypass`.
+
+The handler reads `body.bypass`: when supplied, it overrides `client.auto_send_enabled`; when omitted, the client setting applies. Send a JSON boolean (`false` to force manual review), not a string: the code uses `Boolean(body.bypass)`, so the string `"false"` is truthy. `bypass_approval` is not a supported alias and is ignored. Even with `bypass: true`, AI fallback or empty content prevents automatic sending.
 
 A successful request returns **201**, including deterministic fallback:
 
@@ -47,6 +49,57 @@ A successful request returns **201**, including deterministic fallback:
 ```
 
 AI failure produces a raw structured draft and disables automatic sending; it does not inherently return 502. Other dependencies can still fail. GitHub rate limits return 429 with `code: GITHUB_RATE_LIMITED`. A matching draft can be updated. Weekly checks are not atomic delivery guarantees. Metrics currently use Snn without a year.
+
+### Manual publication and smoke test after PR #60 is merged
+
+**Deployment gap, reported by the project owner on 2026-11-18:** the hosted `generate-report` is still version 31 and references undefined `currentIso.week`. The branch fixes this with `getIsoWeekYear(periodEnd).week`, imported from `_shared/idempotency.ts`. Local tests and GitHub CI do not publish this correction to Supabase. Version 31 was not independently inspected during this documentation update; remote deployment and smoke-test results remain pending.
+
+**Prepare the complete bundle.** After a human merges PR #60, use a clean checkout of the resulting `Main` commit and record its SHA. From the repository root, preserve these relative paths from that same commit:
+
+- [generate-report/index.ts](../supabase/functions/generate-report/index.ts) — entrypoint and corrected week calculation.
+- [_shared/idempotency.ts](../supabase/functions/_shared/idempotency.ts) — exports `getIsoWeekYear` and `findExistingWeekReport`.
+- [_shared/cors.ts](../supabase/functions/_shared/cors.ts), [_shared/supabaseClient.ts](../supabase/functions/_shared/supabaseClient.ts), [_shared/github.ts](../supabase/functions/_shared/github.ts), [_shared/gemini.ts](../supabase/functions/_shared/gemini.ts), [_shared/crypto.ts](../supabase/functions/_shared/crypto.ts) and [_shared/resend.ts](../supabase/functions/_shared/resend.ts) — existing imports required by the entrypoint. `gemini.ts` also imports a type from `github.ts`; `supabaseClient.ts` imports `npm:@supabase/supabase-js@2`.
+- [supabase/config.toml](../supabase/config.toml) — retain the checked-in configuration. Do not change secrets or authentication settings for this fix.
+
+Deploy from the full checkout so the CLI includes the imported shared modules. Do not paste `index.ts` alone into a dashboard editor. Including the unchanged `resend.ts` dependency is necessary to resolve imports; it does not require changing Resend configuration or deploying other functions. Before proceeding, compare the existing function's JWT-verification setting with the intended deployment configuration; stop for review if they differ rather than silently changing authentication.
+
+**Publish only this function, manually.** An authorized operator must select the actual project reference and authenticate the CLI outside repository files. Check `supabase --version`, `supabase functions deploy --help` and `supabase functions list --help` first. The following PowerShell commands use the current CLI v3 `--remote` syntax; CLI v2 uses `--project-ref` instead. Use the installed version's help rather than upgrading or changing configuration blindly. The CLI was unavailable in this local update, so these deployment commands were documented, not executed.
+
+```powershell
+# Run only after the human merge and deployment decision, from the merged checkout.
+git status --short
+git rev-parse HEAD
+$projectRef = Read-Host 'Confirmed target Supabase project reference'
+supabase functions list --remote=$projectRef
+supabase functions deploy generate-report --remote=$projectRef --use-api
+supabase functions list --remote=$projectRef
+```
+
+Check the displayed target before confirming the hosted change. Do not add `--no-verify-jwt`, `--prune` or omit the function name. No database migration, `db push`, permission change, `config push`, cron/dispatcher deployment or secrets update is needed for this correction. Record the new function version, deployment timestamp and source SHA; inspect the deployed source/bundle for the helper import and `getIsoWeekYear(periodEnd).week`, with no remaining undefined `currentIso.week`. A new version number alone does not prove that the correct code was bundled. CLI behaviour and bundling flags: [official CLI reference](https://supabase.com/docs/reference/cli/supabase-functions-deploy); version-selection changes: [CLI v3 changelog](https://supabase.com/changelog/supabase-cli-v3).
+
+**Smoke test without sending email.** First use an isolated test project if available. A later production smoke test must be separately authorized: generation creates or updates report/task/metric rows, so it is not read-only. Choose a dedicated existing test client belonging to the signed-in test manager, with a valid GitHub integration. Keep current Resend settings, do not invoke `approve-and-send` or the scheduler, and do not switch the client setting. The explicit JSON boolean `bypass: false` forces this request into manual review.
+
+```powershell
+# TEST_MANAGER_ACCESS_TOKEN is a short-lived Supabase Auth user JWT supplied
+# securely to this process, not a service-role key or a committed value.
+if (-not $env:TEST_MANAGER_ACCESS_TOKEN) { throw 'Missing test-manager access token' }
+$testClientId = Read-Host 'Dedicated test client UUID owned by this manager'
+$headers = @{ Authorization = "Bearer $env:TEST_MANAGER_ACCESS_TOKEN" }
+$payload = @{ client_id = $testClientId; period_days = 7; bypass = $false } | ConvertTo-Json
+$response = Invoke-WebRequest -Method Post -UseBasicParsing `
+  -Uri "https://$projectRef.supabase.co/functions/v1/generate-report" `
+  -Headers $headers -ContentType 'application/json' -Body $payload
+$result = $response.Content | ConvertFrom-Json
+if ($response.StatusCode -ne 201 -or $result.success -ne $true -or
+    $result.status -ne 'draft' -or $result.auto_sent -ne $false -or
+    -not $result.report_id -or $result.sprint_metric.sprint -notmatch '^S\d+$') {
+  throw 'Smoke test failed; inspect function logs and existing writes before any retry'
+}
+```
+
+Inspect that report in the manager dashboard: three blocks, correct period and an ISO week matching `period.end` in UTC; verify the returned sprint counts against the selected test board. Check Supabase function logs for this invocation and confirm the previous undefined-variable error is absent, with no send attempted by this request. Record a sanitized result (date, source SHA, deployed version, HTTP status and observations), not JWTs, PATs, live portal URLs or client data. `generated_without_ai: true` validates the fallback path only, not live Gemini success. On failure, inspect existing report/metric writes before retrying; do not delete production rows or automatically roll back to the known-broken version 31.
+
+This publication addresses the undefined week variable only. Sending concurrency, legacy tracking, dependency advisories and the unexecuted RLS suite remain open in [FINAL_AUDIT.md](FINAL_AUDIT.md). Neither this documentation update nor a successful smoke test resolves them.
 
 ## POST approve-and-send
 
